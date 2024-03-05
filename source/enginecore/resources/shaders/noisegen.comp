@@ -1,0 +1,91 @@
+// inspired by
+// https://github.com/GPUOpen-Effects/FidelityFX-SSSR/blob/master/sample/src/Shaders/PrepareBlueNoiseTexture.hlsl
+// which uses https://eheitzresearch.wordpress.com/762-2/
+
+// Shader generated blue noise by using a noise dataset (provided by eric heitz)
+// the noise type of noise where each frequency is uniformly distributed, this
+// makes it useful for dithering and sampling in graphics because it minimizes
+// aliasing or clustering artifacts. we store 1 sample per pixel in rg channel
+// of image Also use frameIndex to get temporal variance, getting same noise
+// texture each frame can cause static pattern & artifacts, this helps avoid
+// those By introducing a variable like frameIndex that changes every frame, you
+// can shift or change the noise samples progressively. This means that, over
+// time, you're effectively getting a different set of noise samples. When these
+// are used in operations like Monte Carlo sampling, this progressive change can
+// lead to smoother convergence and reduce temporal aliasing.
+
+#version 460
+
+#extension GL_GOOGLE_include_directive : require
+
+#define GOLDEN_RATIO 1.61803398875f
+
+layout(set = 0, binding = 0, rg8) uniform image2D noise;
+
+layout(set = 0, binding = 1) readonly buffer sobolBuffer {
+  uint g_sobol_buffer[];
+};
+layout(set = 0, binding = 2) readonly buffer rankingTileBuffer {
+  uint g_ranking_tile_buffer[];
+};
+layout(set = 0, binding = 3) readonly buffer scramblingTileBuffer {
+  uint g_scrambling_tile_buffer[];
+};
+
+struct NoisePushConst {
+  uint frameIndex;
+};
+
+layout(push_constant) uniform constants {
+  NoisePushConst constdata;
+};
+
+float fmod(float a, float b) {
+  float c = fract(abs(a / b)) * abs(b);
+  return (a < 0) ? -c : c; /* if ( a < 0 ) c = 0-c */
+}
+
+// Blue Noise Sampler by Eric Heitz. Returns a value in the range [0, 1].
+float SampleRandomNumber(uint pixel_i,
+                         uint pixel_j,
+                         uint sample_index,
+                         uint sample_dimension) {
+  // Wrap arguments
+  pixel_i = pixel_i & 127u;
+  pixel_j = pixel_j & 127u;
+  sample_index = sample_index & 255u;
+  sample_dimension = sample_dimension & 255u;
+
+  // xor index based on optimized ranking
+  const uint ranked_sample_index =
+      sample_index ^
+      g_ranking_tile_buffer[sample_dimension + (pixel_i + pixel_j * 128u) * 8u];
+
+  // Fetch value in sequence
+  uint value = g_sobol_buffer[sample_dimension + ranked_sample_index * 256u];
+
+  // If the dimension is optimized, xor sequence value based on optimized
+  // scrambling
+  value = value ^ g_scrambling_tile_buffer[(sample_dimension % 8u) +
+                                           (pixel_i + pixel_j * 128u) * 8u];
+
+  // Convert to float and return
+  return (value + 0.5f) / 256.0f;
+}
+
+vec2 SampleRandomVector2D(uvec2 pixel) {
+  vec2 u = vec2(fmod(SampleRandomNumber(pixel.x, pixel.y, 0, 0u) +
+                         constdata.frameIndex * GOLDEN_RATIO,
+                     1.0f),
+                fmod(SampleRandomNumber(pixel.x, pixel.y, 0, 1u) +
+                         constdata.frameIndex * GOLDEN_RATIO,
+                     1.0f));
+
+  return u;
+}
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+void main() {
+  imageStore(noise, ivec2(gl_GlobalInvocationID.xy),
+             vec4(SampleRandomVector2D(gl_GlobalInvocationID.xy), 0, 0));
+}

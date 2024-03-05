@@ -1,0 +1,66 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : require
+#include "CommonStructs.glsl"
+
+layout(set = 0, binding = 0) readonly buffer MeshBBoxBuffer {
+  MeshBboxData meshBboxDatas[];
+};
+
+layout(set = 1, binding = 0) readonly buffer InputIndirectDraws {
+  IndirectDrawDataAndMeshData inputIndirectDraws[];
+};
+
+layout(set = 2, binding = 0) writeonly buffer OutputIndirectDraws {
+  IndirectDrawDataAndMeshData outputIndirectDraws[];
+};
+
+layout(set = 3, binding = 0) writeonly buffer IndirectDrawCountBuffer {
+  IndirectDrawCount outDrawCount;
+};
+
+layout(set = 4, binding = 0) uniform ViewBuffer {
+  vec4 frustumPlanes[6];
+}
+viewData;
+
+layout(push_constant) uniform constants {
+  CullingPushConstants cullData;
+};
+
+void cullInvisibleMesh(uint id) {
+  MeshBboxData meshBBoxData = meshBboxDatas[id];
+
+  bool isVisible = true;
+
+  for (int i = 0; i < 6; i++) {
+    vec3 planeNormal = viewData.frustumPlanes[i].xyz;
+    float distFromPlane = dot(meshBBoxData.centerPos.xyz, planeNormal);
+
+    float absDiff = dot(abs(planeNormal), meshBBoxData.extents.xyz);
+    if (distFromPlane + absDiff + viewData.frustumPlanes[i].w < 0.0) {
+      isVisible = false;
+    }
+  }
+
+  if (isVisible) {
+    uint index = atomicAdd(outDrawCount.count, 1);
+
+    outputIndirectDraws[index] = inputIndirectDraws[id];
+  }
+}
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+void main() {
+  uint currentThreadId = gl_GlobalInvocationID.x;
+  if (currentThreadId == 0) {
+    atomicExchange(outDrawCount.count, 0);
+  }
+
+  barrier();
+
+  if (currentThreadId < cullData.count) {
+    cullInvisibleMesh(currentThreadId);
+  }
+}

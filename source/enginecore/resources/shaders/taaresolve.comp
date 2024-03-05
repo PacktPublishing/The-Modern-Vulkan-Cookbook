@@ -1,0 +1,325 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : require
+
+struct TAAPushConstants {
+  uint isFirstFrame;
+  uint isCameraMoving;
+};
+
+#define XY_SIZE 16
+layout(local_size_x = XY_SIZE, local_size_y = XY_SIZE, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, rgba16f) uniform image2D outColorImage;
+
+layout(set = 1, binding = 0) uniform sampler2D inDepthBuffer;
+layout(set = 1, binding = 1) uniform sampler2D inHistoryBuffer;
+layout(set = 1, binding = 2) uniform sampler2D inVelocityBuffer;
+layout(set = 1, binding = 3) uniform sampler2D inColorBuffer;
+
+layout(push_constant) uniform constants {
+  TAAPushConstants taaConstData;
+};
+
+// TAA random offset within one pixel range.
+// so use 3x3 tap to get safe value.
+const ivec2 PATTERN_3X3[9] = {ivec2(-1, -1), ivec2(-1, 0), ivec2(-1, 1),
+                              ivec2(0, 1),   ivec2(0, 0),  ivec2(0, -1),
+                              ivec2(1, 1),   ivec2(1, 0),  ivec2(1, -1)};
+
+const float NEARDIST = 0.1f;
+const float FARDIST = 4000.0f;
+
+float calculateLinearDepth(float depth) {
+  return (2.0 * NEARDIST) / (FARDIST + NEARDIST - depth * (FARDIST - NEARDIST));
+}
+
+vec3 getColorData(ivec2 GlobalId) {
+  return texelFetch(inColorBuffer, GlobalId, 0).rgb;
+}
+
+float getLinearDepthData(ivec2 GlobalId) {
+  float linearZ =
+      calculateLinearDepth(1.0 - texelFetch(inDepthBuffer, GlobalId, 0).r);
+  return linearZ;
+}
+
+void nearestDepth(ivec2 pos, inout float closestDepth, inout ivec2 closestPos) {
+  float d = getLinearDepthData(pos);
+
+  if (d < closestDepth) {
+    closestDepth = d;
+    closestPos = pos;
+  }
+}
+
+// This function performs a 3x3 depth sampling around the given group position,
+// determines the closest depth and corresponding position, and fetches the
+// velocity at that position.
+float closestVelocityAndDepth(inout vec2 velocity) {
+  float minDepth = 1.0f;
+  ivec2 minPos = ivec2(gl_GlobalInvocationID.xy);
+
+  for (int i = 0; i < 9; i++) {
+    nearestDepth(ivec2(gl_GlobalInvocationID.xy) + PATTERN_3X3[i], minDepth,
+                 minPos);
+  }
+
+  // update the velocity at the position corresponding to the closest depth
+  velocity = texelFetch(inVelocityBuffer, minPos, 0).xy;
+
+  return minDepth;
+}
+
+// Catmull-Rom spline to perform a bicubic texture filtering operation
+vec3 catmullRomTextureFiltering(vec2 uv, vec2 resolution) {
+  vec2 samplePos = uv * resolution;
+
+  // Calculate the position of the top-left texel of the 4x4 texel patch used
+  // for interpolation
+  vec2 texPos1 = floor(samplePos - 0.5f) + 0.5f;
+
+  // Calculate the fractional part of the exact sample position
+  vec2 f = samplePos - texPos1;
+
+  // Calculate the Catmull-Rom weights for the four texels along each axis
+  // These weights are based on the fractional part of the sample position and
+  // determine how much each texel contributes to the final result
+  vec2 w0 = f * (-0.5f + f * (1.0f - 0.5f * f));
+  vec2 w1 = 1.0f + f * f * (-2.5f + 1.5f * f);
+  vec2 w2 = f * (0.5f + f * (2.0f - 1.5f * f));
+  vec2 w3 = f * f * (-0.5f + 0.5f * f);
+
+  // Calculate the combined weights and offsets for the middle two texels along
+  // each axis
+  vec2 w12 = w1 + w2;
+  vec2 offset12 = w2 / (w1 + w2);
+
+  // Calculate the positions of the four texels used for interpolation along
+  // each axis
+  vec2 texPos0 = texPos1 - 1.0f;
+  vec2 texPos3 = texPos1 + 2.0f;
+  vec2 texPos12 = texPos1 + offset12;
+
+  texPos0 /= resolution;
+  texPos3 /= resolution;
+  texPos12 /= resolution;
+
+  vec3 result = vec3(0.0f);
+
+  // Perform a 3x3 texture sample using the Catmull-Rom weights
+  // Each sample is added to the result weighted by the corresponding
+  // Catmull-Rom weight
+  result += textureLod(inHistoryBuffer, vec2(texPos0.x, texPos0.y), 0).xyz *
+            w0.x * w0.y;
+  result += textureLod(inHistoryBuffer, vec2(texPos12.x, texPos0.y), 0).xyz *
+            w12.x * w0.y;
+  result += textureLod(inHistoryBuffer, vec2(texPos3.x, texPos0.y), 0).xyz *
+            w3.x * w0.y;
+  result += textureLod(inHistoryBuffer, vec2(texPos0.x, texPos12.y), 0).xyz *
+            w0.x * w12.y;
+  result += textureLod(inHistoryBuffer, vec2(texPos12.x, texPos12.y), 0).xyz *
+            w12.x * w12.y;
+  result += textureLod(inHistoryBuffer, vec2(texPos3.x, texPos12.y), 0).xyz *
+            w3.x * w12.y;
+  result += textureLod(inHistoryBuffer, vec2(texPos0.x, texPos3.y), 0).xyz *
+            w0.x * w3.y;
+  result += textureLod(inHistoryBuffer, vec2(texPos12.x, texPos3.y), 0).xyz *
+            w12.x * w3.y;
+  result += textureLod(inHistoryBuffer, vec2(texPos3.x, texPos3.y), 0).xyz *
+            w3.x * w3.y;
+
+  return max(result, vec3(0.0f));
+}
+
+float luminance(vec3 color) {
+  return max(dot(color, vec3(0.299f, 0.587f, 0.114f)), 0.0001f);
+}
+
+// performs a variance clamping operation on the history color.
+// Variance clamping is a technique often used to prevent ghosting and other
+// artifacts in TAA. It works by constraining the color from the history buffer
+// to a certain range based on the variance in the 3x3 neighborhood around the
+// current pixel.
+vec3 varianceClampColor(vec3 colorHistory, float boxSize) {
+  float wsum = 0.0f;  // Holds the sum of the weights
+  vec3 vsum = vec3(0.0f, 0.0f,
+                   0.0f);  // Holds the sum of the colors weighted by their
+                           // corresponding weight
+  vec3 vsum2 =
+      vec3(0.0f, 0.0f, 0.0f);  // Holds the sum of the squares of the colors
+                               // weighted by their corresponding weight
+
+  // Loop over the 3x3 neighborhood
+  for (int y = -1; y <= 1; ++y) {
+    for (int x = -1; x <= 1; ++x) {
+      // Load the color of the neighboring pixel
+      const vec3 neighColor =
+          getColorData(ivec2(gl_GlobalInvocationID.xy) + ivec2(x, y));
+
+      // Calculate the weight for the neighboring pixel based on its distance to
+      // the current pixel
+      // -.75 is arbitrary, use some negative value so the weight decreases as
+      // the distance increases. The greater the value, the faster the weight
+      // decreases with distance
+      const float w = exp(-0.75f * (x * x + y * y));
+
+      // Update the weighted sums
+      vsum2 += neighColor * neighColor * w;
+      vsum += neighColor * w;
+      wsum += w;
+    }
+  }
+
+  // Calculate the mean color and color variance in the 3x3 neighborhoo
+  const vec3 ex = vsum / wsum;    // Mean color
+  const vec3 ex2 = vsum2 / wsum;  // Mean of the squares of the colors
+  const vec3 dev = sqrt(
+      max(ex2 - ex * ex,
+          0.0f));  // Standard deviation of the colors (sqrt of the variance)
+
+  vec3 nmin = ex - dev * boxSize;
+  vec3 nmax = ex + dev * boxSize;
+  return clamp(colorHistory, nmin, nmax);
+}
+
+// Perform calculations to determine the blend factor of a pixel based on its
+// velocity and luminance
+// * First Calculate subpixelMotion, which is related to the velocity of the
+// pixel, and dynamicBlendFactor, which is a combination of the pixel's velocity
+// and subpixel motion.
+// * Second calculate the luminance bias correction by determining the
+// difference in luminance between the current color and the historical color A
+// moveFactor is calculated based on the pixel's velocity. This is used to reset
+// velocityLerp if the movement is very small. velocityLerp is then updated to
+// provide a smooth transition between frames
+float calculateBlendFactor(float closestDepth,
+                           vec2 velocity,
+                           bool noGeometry,
+                           vec2 workSize,
+                           vec3 colorIn,
+                           vec3 clampHistory,
+                           float velocityLerp) {
+  // Ideal blend factor for static objects
+  const float idealLerpFactor = 0.01f;
+  float blendFactor = idealLerpFactor;
+
+  // Constants for subpixel flicker reduction
+  const float threshold = 0.5f;
+  const float base = 0.5f;
+  const float gather = 0.1666f;
+
+  // Reduce subpixel flicker
+  float depth = closestDepth;
+  // Calculate the magnitude of the pixel's velocity in screen space
+  float pixelVelocityMagnitude = length(velocity * vec2(workSize)) * depth;
+  // Calculate subpixel motion, a value that decreases as pixel velocity
+  // increases
+  float subpixelMotion =
+      clamp(threshold / (pixelVelocityMagnitude + 1e-8f), 0.0f, 1.0f);
+
+  // Calculate blend factor for dynamic objects based on both pixel velocity and
+  // subpixel motion
+  float dynamicBlendFactor =
+      pixelVelocityMagnitude * base + subpixelMotion * gather;
+
+  // Correct for luminance bias
+  float historyLuminance = luminance(clampHistory);
+  float currentLuminance = luminance(colorIn);
+  float unbiasedDifference = abs(currentLuminance - historyLuminance) /
+                             ((max(currentLuminance, historyLuminance) + 0.3));
+  // Adjust dynamic blend factor based on luminance difference
+  dynamicBlendFactor *= 1.0 - unbiasedDifference;
+
+  // Clamp dynamic blend factor
+  dynamicBlendFactor = clamp(dynamicBlendFactor, 0.0f, 0.4f);
+
+  // Calculate movement factor
+  float moveFactor =
+      max(abs(velocity.x * workSize.x), abs(velocity.y * workSize.y)) * 100.0f;
+
+  // If movement is very small, reset lerp factor to avoid ghosting
+  velocityLerp = moveFactor > 0.01f ? 0 : velocityLerp;
+
+  // Update velocity lerp for smooth frame transitions
+  velocityLerp = mix(velocityLerp, 1.0f, idealLerpFactor);
+
+  // Calculate lerp factor
+  float lerpFactor = clamp(1.0f - velocityLerp, 0.0f, 1.0f);
+  lerpFactor = pow(lerpFactor, 16.0f);
+  lerpFactor = smoothstep(0.0f, 1.0f, lerpFactor);
+
+  // Update blend factor
+  blendFactor = noGeometry ? blendFactor
+                           : mix(blendFactor, dynamicBlendFactor, lerpFactor);
+
+  return blendFactor;
+}
+
+void main() {
+  ivec2 workSize = textureSize(inColorBuffer, 0).xy;
+
+  ivec2 pixelPos = ivec2(gl_GlobalInvocationID.xy);
+  if (pixelPos.x >= workSize.x || pixelPos.y >= workSize.y) {
+    return;
+  }
+
+  vec2 uv = (vec2(pixelPos) + vec2(0.5)) / vec2(workSize);
+
+  // Calculate the closest depth and corresponding velocity around the current
+  // pixel position. This velocity will be used to reproject the current pixel
+  // position to its corresponding position in the previous frame.
+  vec2 velocity;
+  const float closestDepth = closestVelocityAndDepth(velocity);
+
+  // Reproject the current pixel position to its position in the previous frame
+  // using the velocity vector
+  vec2 reprojectedUV = uv - velocity;
+
+  // If this is not the first frame, initialize the motion blur by fetching the
+  // pixel's previous value from the history buffer. If it's first frame, set
+  // the motion blur to 0.
+  float velocityLerp = (taaConstData.isFirstFrame != 0)
+                           ? texture(inHistoryBuffer, reprojectedUV).w
+                           : 0.0f;
+
+  // Check if the pixel corresponds to background (no geometry present)
+  const bool noGeometry = closestDepth <= 0.00005f;
+
+  // Load the current frame color from the local data share
+  vec3 colorIn = getColorData(ivec2(gl_GlobalInvocationID.xy));
+
+  // Use a Catmull-Rom filter to sample the history color from the reprojected
+  // position in the history buffer. This provides high-quality texture
+  // interpolation, which can reduce aliasing artifacts and improve the visual
+  // result.
+  vec3 colorHistory = catmullRomTextureFiltering(reprojectedUV, vec2(workSize));
+
+  // If the camera is moving, use a larger sampling box size to blend more
+  // samples and reduce flickering. If the camera is stationary, use a smaller
+  // box size to preserve detail. Interpolate between the two box sizes based on
+  // the previous motion blur value.
+  const float boxSizeWhenMoving = 2000.0f;
+  const float boxSizeWhenStationary = 100.0f;
+  float boxSize =
+      (taaConstData.isCameraMoving == 0)
+          ? boxSizeWhenStationary
+          : mix(boxSizeWhenStationary, boxSizeWhenMoving, velocityLerp);
+
+  // If there is no geometry present, use the smallest box size to avoid
+  // sampling background pixels.
+  boxSize = mix(0.5f, boxSize,
+                noGeometry ? 0.0f : smoothstep(0.02f, 0.0f, length(velocity)));
+
+  // variance clamp.
+  vec3 clampHistory = varianceClampColor(colorHistory, boxSize);
+
+  float blendFactor =
+      calculateBlendFactor(closestDepth, velocity, noGeometry, workSize,
+                           colorIn, clampHistory, velocityLerp);
+
+  vec3 colorResolve = mix(clampHistory, colorIn, blendFactor);
+
+  imageStore(outColorImage, ivec2(gl_GlobalInvocationID.xy),
+             vec4(colorResolve, velocityLerp));
+}

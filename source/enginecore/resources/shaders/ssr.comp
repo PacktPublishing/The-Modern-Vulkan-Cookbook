@@ -1,0 +1,118 @@
+#version 460
+
+struct PushConstants {
+  uvec2 textureResolution;
+  uint frameIndex;
+};
+
+layout(push_constant) uniform constants {
+  PushConstants pushConstant;
+};
+
+layout(set = 0, binding = 0, rgba16f) uniform image2D SSRIntersect;
+
+layout(set = 1, binding = 0) uniform sampler2D gBufferWorldNormal;
+layout(set = 1, binding = 1) uniform sampler2D gBufferSpecular;
+layout(set = 1, binding = 2) uniform sampler2D gBufferBaseColor;
+layout(set = 1, binding = 3) uniform sampler2D hierarchicalDepth;
+layout(set = 1, binding = 4) uniform sampler2D noiseTexture;
+
+layout(set = 2, binding = 0) uniform Transforms {
+  mat4 model;
+  mat4 view;
+  mat4 projection;
+  mat4 projectionInv;
+  mat4 viewInv;
+}
+cameraData;
+
+vec3 generatePositionFromDepth(vec2 texturePos, float depth) {
+  texturePos.y = 1.0f - texturePos.y;
+  const vec4 ndc = vec4((texturePos * 2.0) - 1.0, depth, 1.0);
+  vec4 worldPosition = cameraData.projectionInv * ndc;
+  worldPosition /= worldPosition.w;
+  return worldPosition.xyz;
+}
+
+vec2 generateProjectedPosition(vec3 worldPos) {
+  const vec4 clipSpacePosition = cameraData.projection * vec4(worldPos, 1.0);
+  const vec2 ndc = clipSpacePosition.xy / clipSpacePosition.w;
+  vec2 pt = (ndc + 1.0) * 0.5;
+  pt.y = 1 - pt.y;
+  return pt;
+}
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+void main() {
+  ivec2 textureRes = textureSize(gBufferBaseColor, 0).xy;
+
+  if (gl_GlobalInvocationID.x >= textureRes.x ||
+      gl_GlobalInvocationID.y >= textureRes.y) {
+    return;
+  }
+
+  imageStore(SSRIntersect, ivec2(gl_GlobalInvocationID.xy), vec4(0));
+
+  vec2 uv = (vec2(gl_GlobalInvocationID.xy) + vec2(0.5f)) / textureRes;
+  ivec2 pixelPos = ivec2(gl_GlobalInvocationID.xy);
+
+  vec4 gbufferNormalData = texelFetch(gBufferWorldNormal, pixelPos, 0);
+  vec4 gbufferSpecularData = texelFetch(gBufferSpecular, pixelPos, 0);
+  vec3 basecolor = texture(gBufferBaseColor, uv).xyz;
+
+  float roughness = gbufferSpecularData.g;
+
+  if (gbufferSpecularData.r < .01) {  // Metalness check
+    imageStore(SSRIntersect, ivec2(gl_GlobalInvocationID.xy),
+               vec4(basecolor, 1.0));
+    return;
+  }
+
+  float z = texelFetch(hierarchicalDepth, pixelPos, 0).r;
+  vec3 position = generatePositionFromDepth(uv, z);
+  vec3 normal = normalize(gbufferNormalData.xyz);
+
+  vec3 camPos = cameraData.viewInv[3].xyz;
+
+  vec3 viewDirection = normalize(position - camPos);
+  vec3 reflectionDirection = reflect(viewDirection, normal);
+
+  float stepSize = 0.05;  // Initial step size
+
+  vec3 currentPos = position;
+
+  for (int i = 0; i < 50; i++) {
+    currentPos += reflectionDirection * stepSize;
+    vec2 screenPos = generateProjectedPosition(currentPos);
+
+    if (screenPos.x < 0.0 || screenPos.x > 1.0 || screenPos.y < 0.0 ||
+        screenPos.y > 1.0) {
+      break;  // Ray went out of screen bounds
+    }
+
+    float depthAtCurrent = texture(hierarchicalDepth, screenPos).r;
+    vec3 positionFromDepth =
+        generatePositionFromDepth(screenPos, depthAtCurrent);
+    float depthDifference = length(currentPos - positionFromDepth);
+
+    if (depthDifference < 0.05) {
+      vec3 hitColor = texture(gBufferBaseColor, screenPos).xyz;
+      if (hitColor.x <= .1 && hitColor.y <= .1 && hitColor.z <= .1 &&
+          hitColor.x >= .08 && hitColor.y >= .08 &&
+          hitColor.z >=
+              .08) {  // .1 is considered sky color, ignore if we hit sky (hack)
+        hitColor = basecolor;
+      }
+
+      vec3 blendColor = hitColor * (1.0 - roughness) + roughness * basecolor;
+
+      imageStore(SSRIntersect, ivec2(gl_GlobalInvocationID.xy),
+                 vec4(blendColor, 1.0));
+      return;
+    }
+  }
+
+  // Fallback
+  imageStore(SSRIntersect, ivec2(gl_GlobalInvocationID.xy),
+             vec4(basecolor, 1.0));
+}

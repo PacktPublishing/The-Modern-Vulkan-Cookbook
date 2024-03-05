@@ -1,0 +1,103 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_GOOGLE_include_directive : require
+#include "random.glsl"
+#include "raytrace_struct.glsl"
+#include "raytrace_utils.glsl"
+
+layout(location = 0) rayPayloadEXT float visibilityRayPayload;
+
+layout(set = 0,
+       binding = 0) uniform accelerationStructureEXT topLevelAccelStruct;
+layout(set = 0, binding = 1, rgba8) uniform image2D outputImage;
+
+layout(set = 1, binding = 0) uniform sampler2D gbufferNormal;
+layout(set = 1, binding = 1) uniform sampler2D gbufferPosition;
+
+layout(set = 2, binding = 0) uniform Lights {
+  vec4 lightPos;
+  vec4 lightDir;
+  vec4 lightColor;
+  vec4 ambientColor;  // environment light color
+  mat4 lightVP;
+  float innerConeAngle;
+  float outerConeAngle;
+}
+lightData;
+
+void main() {
+  const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
+  const vec2 inUV = pixelCenter / vec2(gl_LaunchSizeEXT.xy);
+
+  vec3 normal = normalize(texture(gbufferNormal, inUV).xyz);
+
+  vec3 worldPosition = texture(gbufferPosition, inUV).xyz;
+
+  vec3 rayOrigin = worldPosition + normal * 0.1f;
+
+  uint rayFlags = gl_RayFlagsOpaqueEXT;
+  float tMin = 0.001;
+  float tMax = 10000.0;
+
+  visibilityRayPayload = 1.0;
+
+  float visible = 0.0;
+
+  int numSamples = 16;
+
+  float lightSize = .1;
+
+  uint seed = tea(gl_LaunchIDEXT.y * gl_LaunchIDEXT.x + gl_LaunchIDEXT.x, 0);
+
+  for (int i = 0; i < numSamples; i++) {
+    vec3 randomPointOnLight =
+        lightData.lightPos.xyz + (rand3(seed) - 0.5) * lightSize;
+
+    vec3 directionToLight = normalize(randomPointOnLight - worldPosition);
+
+    // Start the raytrace
+    traceRayEXT(topLevelAccelStruct,   // acceleration structure
+                rayFlags,              // rayFlags
+                0xFF,                  // cullMask
+                0,                     // sbtRecordOffset
+                0,                     // sbtRecordStride
+                0,                     // missIndex
+                rayOrigin.xyz,         // ray origin
+                tMin,                  // ray min range
+                directionToLight.xyz,  // ray direction
+                tMax,                  // ray max range
+                0                      // payload (location = 0)
+    );
+
+    visible += visibilityRayPayload;
+  }
+
+  visible /= float(numSamples);
+
+  float ao = 0.0;
+  visibilityRayPayload = 0.0;
+  for (uint i = 0; i < 5; ++i) {
+    vec3 dir = randomHemispherePoint(seed, normal);
+
+    // Start the raytrace
+    traceRayEXT(topLevelAccelStruct,  // acceleration structure
+                rayFlags,             // rayFlags
+                0xFF,                 // cullMask
+                0,                    // sbtRecordOffset
+                0,                    // sbtRecordStride
+                0,                    // missIndex
+                rayOrigin.xyz,        // ray origin
+                tMin,                 // ray min range
+                dir,                  // ray direction
+                tMax,                 // ray max range
+                0                     // payload (location = 0)
+    );
+
+    ao += visibilityRayPayload;
+  }
+
+  ao /= 5.0;
+
+  imageStore(outputImage, ivec2(gl_LaunchIDEXT.xy),
+             vec4(visible, ao, 0.0, 1.0));
+}

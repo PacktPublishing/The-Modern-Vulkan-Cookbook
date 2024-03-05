@@ -1,0 +1,23 @@
+# Copyright (c) 2020-2023, The Khronos Group Inc.
+# SPDX-License-Identifier: Apache-2.0
+jobs:
+- job: check_file_format
+  displayName: 'Check file formatting'
+  pool:
+    vmImage: 'ubuntu-latest'
+  container: khronosgroup/docker-images:openxr-sdk.20230323
+  # container: khronosgroup/docker-images@sha256:20edadbaa6cdec4fed7417c24b18dfb4b93eec940fdf1a27b5f97272dec47032
+  steps:
+    - script: ./file_format.sh
+      displayName: File formatting checks (file_format.sh)
+
+    - script: git diff --patch --exit-code > file_format.patch
+      displayName: Save changes as diff
+    - script: echo "The following files need file formatting:"; sed -n -e "s/^diff.* b\///p" file_format.patch
+      condition: failed()
+    - task: PublishPipelineArtifact@1
+      displayName: Publish diff
+      condition: failed()
+      inputs:
+        path: $(System.DefaultWorkingDirectory)/file_format.patch
+        artifact: file_format_changes

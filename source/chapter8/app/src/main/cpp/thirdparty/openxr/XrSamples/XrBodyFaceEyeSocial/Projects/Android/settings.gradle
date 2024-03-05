@@ -1,0 +1,5 @@
+rootProject.projectDir = new File(settingsDir, '../../../..')
+rootProject.name = "XrBodyFaceEyeSocial"
+
+include ':', \
+	'XrSamples:XrBodyFaceEyeSocial:Projects:Android'

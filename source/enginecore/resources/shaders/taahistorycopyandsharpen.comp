@@ -1,0 +1,74 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : require
+
+#define XY_SIZE 16
+layout(local_size_x = XY_SIZE, local_size_y = XY_SIZE, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, rgba16f) uniform image2D outColorImage;
+layout(set = 0, binding = 1, rgba16f) uniform image2D outHistory;
+
+layout(set = 1, binding = 0, rgba16f) uniform image2D inColorImage;
+
+// Converts RGB to YCoCg color space.
+// YCoCg is a color space that separates the color image into one luma
+// (brightness) channel ('Y') and two chroma (color) channels ('Co' and 'Cg').
+vec3 RGBToYCoCg(in vec3 rgb) {
+  return vec3(0.25f * rgb.r + 0.5f * rgb.g + 0.25f * rgb.b,
+              0.5f * rgb.r - 0.5f * rgb.b,
+              -0.25f * rgb.r + 0.5f * rgb.g - 0.25f * rgb.b);
+}
+
+vec3 YCoCgToRGB(in vec3 yCoCg) {
+  return vec3(yCoCg.x + yCoCg.y - yCoCg.z, yCoCg.x + yCoCg.z,
+              yCoCg.x - yCoCg.y - yCoCg.z);
+}
+
+vec3 sharpen() {
+  const vec3 top =
+      imageLoad(inColorImage, ivec2(gl_GlobalInvocationID.xy) + ivec2(0, 1))
+          .xyz;
+  const vec3 left =
+      imageLoad(inColorImage, ivec2(gl_GlobalInvocationID.xy) + ivec2(1, 0))
+          .xyz;
+  const vec3 center =
+      imageLoad(inColorImage, ivec2(gl_GlobalInvocationID.xy) + ivec2(0, 0))
+          .xyz;
+  const vec3 right =
+      imageLoad(inColorImage, ivec2(gl_GlobalInvocationID.xy) + ivec2(-1, 0))
+          .xyz;
+  const vec3 bottom =
+      imageLoad(inColorImage, ivec2(gl_GlobalInvocationID.xy) + ivec2(0, -1))
+          .xyz;
+
+  vec3 result = RGBToYCoCg(center);
+
+  float unsharpenMask = 4.0f * result.x;
+
+  unsharpenMask -= RGBToYCoCg(top).x;
+  unsharpenMask -= RGBToYCoCg(bottom).x;
+  unsharpenMask -= RGBToYCoCg(left).x;
+  unsharpenMask -= RGBToYCoCg(right).x;
+
+  result.x = min(result.x + 0.25f * unsharpenMask, 1.1f * result.x);
+
+  // Convert back to RGB color space
+  return YCoCgToRGB(result);
+}
+
+void main() {
+  ivec2 workSize = imageSize(inColorImage);
+
+  if (gl_GlobalInvocationID.x >= workSize.x ||
+      gl_GlobalInvocationID.y >= workSize.y) {
+    return;
+  }
+
+  vec4 incolor = imageLoad(inColorImage, ivec2(gl_GlobalInvocationID.xy));
+
+  imageStore(outHistory, ivec2(gl_GlobalInvocationID.xy), incolor);
+
+  vec3 color = sharpen();
+
+  imageStore(outColorImage, ivec2(gl_GlobalInvocationID.xy), vec4(color, 1.0f));
+}
