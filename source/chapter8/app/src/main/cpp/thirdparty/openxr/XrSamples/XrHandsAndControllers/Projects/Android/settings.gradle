@@ -1,0 +1,5 @@
+rootProject.projectDir = new File(settingsDir, '../../../..')
+rootProject.name = "XrHandsAndControllers"
+
+include ':', \
+    ':XrSamples:XrHandsAndControllers:Projects:Android'

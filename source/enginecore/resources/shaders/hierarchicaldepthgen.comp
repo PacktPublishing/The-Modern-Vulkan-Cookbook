@@ -1,0 +1,133 @@
+// inspired by https://miketuritzin.com/post/hierarchical-depth-buffers/
+
+#version 460
+
+#extension GL_GOOGLE_include_directive : require
+
+layout(constant_id = 0) const uint nummips =
+    20;  // just some big number, specialization const provided from outside
+
+// Store the minimum and maximum depths in red (r) and green (g) channels.
+layout(set = 0,
+       binding = 0,
+       rg32f) uniform writeonly image2D hierarchicalDepthImage[nummips];
+
+// Current depth texture.
+layout(set = 0, binding = 1) uniform sampler2D depthTexture;
+
+// Previous mipmap level of the hierarchical depth.
+layout(set = 0, binding = 2) uniform sampler2D prevHierarchicalDepthMip;
+
+struct HierarchicalDepthPushConst {
+  ivec2 currentMipDimensions;
+  ivec2 prevMipDimensions;
+  int mipLevelIndex;
+};
+
+// Push constants.
+layout(push_constant) uniform constants {
+  HierarchicalDepthPushConst pushConstData;
+};
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+void main() {
+  // Discard out-of-bound threads.
+  if (gl_GlobalInvocationID.x >= pushConstData.currentMipDimensions.x ||
+      gl_GlobalInvocationID.y >= pushConstData.currentMipDimensions.y) {
+    return;
+  }
+
+  // Initialize the min and max depth values.
+  float minDepthValue = 1.0f;
+  float maxDepthValue = 0.0f;
+
+  // If it's the first mipmap level, read depth from the depth texture.
+  if (pushConstData.mipLevelIndex == 0) {
+    minDepthValue =
+        1.0 - texelFetch(depthTexture, ivec2(gl_GlobalInvocationID.xy), 0).x;
+    maxDepthValue = minDepthValue;
+  } else {
+    // Check if previous mipmap's dimensions were odd.
+    // Required since NPOT2 textures needs more data to correctly generate mips
+    // this is because when generating the next mipmap level from an odd-sized
+    // texture, there will be a row (or column) of texels on the edge that
+    // doesn't get neatly paired with adjacent texels to compute the new mipmap
+    // value
+    ivec2 prevLevelDimensionsIsOdd =
+        pushConstData.prevMipDimensions & ivec2(1.0);
+
+    // Compute the position in the previous mipmap.
+    ivec2 position = ivec2(gl_GlobalInvocationID.xy) * 2;
+
+    // Fetch depth values from the previous mipmap.
+    vec2 depthTopLeft =
+        texelFetch(prevHierarchicalDepthMip, position + ivec2(0, 1),
+                   pushConstData.mipLevelIndex - 1)
+            .xy;
+    vec2 depthTopRight =
+        texelFetch(prevHierarchicalDepthMip, position + ivec2(1, 1),
+                   pushConstData.mipLevelIndex - 1)
+            .xy;
+    vec2 depthBottomLeft =
+        texelFetch(prevHierarchicalDepthMip, position + ivec2(0, 0),
+                   pushConstData.mipLevelIndex - 1)
+            .xy;
+    vec2 depthBottomRight =
+        texelFetch(prevHierarchicalDepthMip, position + ivec2(1, 0),
+                   pushConstData.mipLevelIndex - 1)
+            .xy;
+
+    // Compute the min and max depths for the current pixel.
+    minDepthValue =
+        min(min(min(depthTopLeft.x, depthTopRight.x), depthBottomLeft.x),
+            depthBottomRight.x);
+    maxDepthValue =
+        max(max(max(depthTopLeft.y, depthTopRight.y), depthBottomLeft.y),
+            depthBottomRight.y);
+
+    // If the width of the previous mipmap was odd, fetch the additional depths.
+    if (prevLevelDimensionsIsOdd.x > 0) {
+      vec2 depthExtraX1 =
+          texelFetch(prevHierarchicalDepthMip, position + ivec2(2, 0),
+                     pushConstData.mipLevelIndex - 1)
+              .xy;
+      vec2 depthExtraX2 =
+          texelFetch(prevHierarchicalDepthMip, position + ivec2(2, 1),
+                     pushConstData.mipLevelIndex - 1)
+              .xy;
+      minDepthValue = min(min(minDepthValue, depthExtraX1.x), depthExtraX2.x);
+      maxDepthValue = max(max(maxDepthValue, depthExtraX1.y), depthExtraX2.y);
+    }
+
+    // If the height of the previous mipmap was odd, fetch the additional
+    // depths.
+    if (prevLevelDimensionsIsOdd.y > 0) {
+      vec2 depthExtraY1 =
+          texelFetch(prevHierarchicalDepthMip, position + ivec2(0, 2),
+                     pushConstData.mipLevelIndex - 1)
+              .xy;
+      vec2 depthExtraY2 =
+          texelFetch(prevHierarchicalDepthMip, position + ivec2(1, 2),
+                     pushConstData.mipLevelIndex - 1)
+              .xy;
+      minDepthValue = min(min(minDepthValue, depthExtraY1.x), depthExtraY2.x);
+      maxDepthValue = max(max(maxDepthValue, depthExtraY1.y), depthExtraY2.y);
+    }
+
+    // If both width and height of the previous mipmap were odd, fetch the
+    // additional depth.
+    if (prevLevelDimensionsIsOdd.x > 0 && prevLevelDimensionsIsOdd.y > 0) {
+      vec2 depthExtraCorner =
+          texelFetch(prevHierarchicalDepthMip, position + ivec2(2, 2),
+                     pushConstData.mipLevelIndex - 1)
+              .xy;
+
+      minDepthValue = min(minDepthValue, depthExtraCorner.x);
+      maxDepthValue = max(maxDepthValue, depthExtraCorner.y);
+    }
+  }
+
+  imageStore(hierarchicalDepthImage[pushConstData.mipLevelIndex],
+             ivec2(gl_GlobalInvocationID.xy),
+             vec4(minDepthValue, maxDepthValue, 0.0f, 0.0f));
+}

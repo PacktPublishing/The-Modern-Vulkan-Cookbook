@@ -1,0 +1,157 @@
+#version 460
+
+struct PushConstants {
+  uvec2 textureResolution;
+  uint frameIndex;
+};
+
+layout(push_constant) uniform constants {
+  PushConstants pushConstant;
+};
+
+layout(set = 0, binding = 0, rgba8) uniform image2D OutputSSAO;
+
+layout(set = 1, binding = 0) uniform sampler2D gBufferDepth;
+
+const float nearDistance = .1f;
+const float farDistance = 100.0f;
+
+vec2 generateRandomNoise(in vec2 coord)  // generating random noise
+{
+  float noiseX = (fract(sin(dot(coord, vec2(12.9898, 78.233))) * 43758.5453));
+  float noiseY =
+      (fract(sin(dot(coord, vec2(12.9898, 78.233) * 2.0)) * 43758.5453));
+  return vec2(noiseX, noiseY) * 0.004;
+}
+
+float calculateLinearDepth(float depth) {
+  return (2.0 * nearDistance) /
+         (farDistance + nearDistance - depth * (farDistance - nearDistance));
+}
+
+float compareDepths(float depth1, float depth2) {
+  const float aoCap = 0.5;
+  const float aoMultiplier = 50.0;
+  const float depthTolerance = 0.001;
+  const float aoRange = 60.0;
+  float depthDifference = sqrt(
+      clamp(1.0 - (depth1 - depth2) / (aoRange / (farDistance - nearDistance)),
+            0.0, 1.0));
+  float ao =
+      min(aoCap, max(0.0, depth1 - depth2 - depthTolerance) * aoMultiplier) *
+      depthDifference;
+  return ao;
+}
+
+// 1.) Read the depth information of each pixel from a depth buffer. The depth
+// of a pixel tells us how far it is from the camera. We need to linearize depth
+// for accurate depth comparisons since depth stored isn't linear in perspective
+// projection.
+
+// 2.) For each pixel on the screen, we take a number of samples in a hemisphere
+// around the pixel. These samples are taken in a pattern that's distributed
+// around the pixel being processed. The radius of this hemisphere is an
+// important parameter of the algorithm. In code below this is handled by
+// variable w & h
+
+// 3.) For each sample, we calculate the position in 3D space and retrieves the
+// depth of that point, then compares this depth with the depth of the original
+// pixel. If the sampled depth is significantly closer to the camera than the
+// original pixel's depth, this means that the original pixel is occluded by the
+// sampled point.
+
+// 4.) The occlusion factor is then calculated based on the depth comparison.
+// The more samples that are closer to the camera, the higher the occlusion
+// factor.
+
+// 5.) The final occlusion factor is used to darken the original pixel. Areas of
+// high occlusion (many samples closer to the camera) will be darker, while
+// areas of low occlusion will be lighter. This gives the effect of soft shadows
+// in the corners and crevices of your geometry, adding depth and realism to the
+// scene.
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+void main() {
+  if (gl_GlobalInvocationID.x >= pushConstant.textureResolution.x ||
+      gl_GlobalInvocationID.y >= pushConstant.textureResolution.y) {
+    return;
+  }
+
+  imageStore(OutputSSAO, ivec2(gl_GlobalInvocationID.xy), vec4(0));
+
+  vec2 uv = (vec2(gl_GlobalInvocationID.xy) + vec2(0.5f)) /
+            vec2(pushConstant.textureResolution);
+  ivec2 pixelPos = ivec2(gl_GlobalInvocationID.xy);
+
+  float depthBufferValue = texelFetch(gBufferDepth, pixelPos, 0).r;
+  float depth = calculateLinearDepth(depthBufferValue);
+
+  float textureWidth = float(pushConstant.textureResolution.x);
+  float textureHeight = float(pushConstant.textureResolution.y);
+
+  float aspectRatio = textureWidth / textureHeight;
+  vec2 noise = generateRandomNoise(vec2(pixelPos));
+
+  // Here, w and h are inversely proportional to the depth value (which is
+  // clamped between 0.05 and 1.0 to avoid division by zero or very small
+  // numbers). This means that when the depth is small (i.e., the pixel is close
+  // to the camera), w and h are large and the samples are spread out over a
+  // large area. Conversely, when the depth is large (i.e., the pixel is far
+  // from the camera), w and h are small and the samples are concentrated in a
+  // small area. The noise is added to add some randomness to the sample
+  // distribution, which helps to avoid banding artifacts. The noise is scaled
+  // by (1.0-noise.x) and (1.0-noise.y) to ensure that it doesn't become too
+  // large. w and h are scaled by textureWidth/2.0 and textureHeight/2.0 to
+  // convert them from normalized device coordinates to pixel coordinates. w and
+  // h control the radius of the hemisphere in which samples are taken around
+  // each pixel, and this radius varies depending on the depth of the pixel and
+  // some random noise.
+  float w = (1.0 / textureWidth) / clamp(depth, 0.05, 1.0) +
+            (noise.x * (1.0 - noise.x));
+  float h = (1.0 / textureHeight) / clamp(depth, 0.05, 1.0) +
+            (noise.y * (1.0 - noise.y));
+
+  w *= textureWidth / 2.0;
+  h *= textureHeight / 2.0;
+
+  float sampleWidth;
+  float sampleHeight;
+
+  float ao = 0.0;
+  float totalSamples = 0.0;
+  float fade = 1.0;
+
+  const int NUM_RINGS = 3;
+  const int NUM_SAMPLES = 6;
+
+  // Taking a number of samples around each pixel, calculating the depth of each
+  // sample, and comparing it to the depth of the central pixel. If a sample is
+  // much closer to the camera than the central pixel, it contributes to the
+  // occlusion factor, making the pixel darker.
+
+  // This code loops over a number of "rings" around a central point (the pixel
+  // being processed). Within each ring, it takes a number of samples. For each
+  // sample, it calculates the position of the sample by taking the sine and
+  // cosine of the current step angle
+  for (int i = 0; i < NUM_RINGS; i++) {
+    fade *= 0.5;
+    for (int j = 0; j < NUM_SAMPLES * i; j++) {
+      float step = 3.14159265 * 2.0 / float(NUM_SAMPLES * i);
+      sampleWidth = (cos(float(j) * step) * float(i));
+      sampleHeight = (sin(float(j) * step) * float(i));
+      float newDepthValue =
+          texelFetch(
+              gBufferDepth,
+              pixelPos + ivec2(int(sampleWidth * w), int(sampleHeight * h)), 0)
+              .r;
+      ao += compareDepths(depth, calculateLinearDepth(newDepthValue)) * fade;
+      totalSamples += 1.0 * fade;
+    }
+  }
+
+  ao /= totalSamples;
+  ao = 1.0 - ao;
+
+  imageStore(OutputSSAO, ivec2(gl_GlobalInvocationID.xy),
+             vec4(ao, ao, ao, 1.0));
+}
