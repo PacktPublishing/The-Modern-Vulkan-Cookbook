@@ -27,15 +27,12 @@ void main() {
   uint index =
       indexAlias[INDICIES_INDEX].indices[gl_BaseVertex + gl_VertexIndex];
   debugPrintfEXT(
-      "gl_BaseVertex = %d gl_VertexIndex = %d, gl_BaseInstance = %d, index = "
-      "%d, gl_InstanceIndex = %d",
+      "gl_BaseVertex = %d gl_VertexIndex = %d, gl_BaseInstance = %d, index = %d, gl_InstanceIndex = %d",
       gl_BaseVertex, gl_VertexIndex, gl_BaseInstance, index, gl_InstanceIndex);
 
-  // uint index = indexAlias[INDICIES_INDEX].indices[gl_BaseVertex +
-  // gl_VertexIndex];
+
   Vertex vertex = vertexAlias[VERTEX_INDEX]
                       .vertices[/*gl_InstanceIndex + */ gl_VertexIndex];
-  // debugPrintfEXT("gl_VertexIndex = %d", gl_VertexIndex);
 
   vec3 position = vec3(vertex.posX, vertex.posY, vertex.posZ);
   vec3 normal = vec3(vertex.normalX, vertex.normalY, vertex.normalZ);

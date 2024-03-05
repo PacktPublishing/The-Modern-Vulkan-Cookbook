@@ -2,11 +2,18 @@
 #extension GL_EXT_ray_tracing : require
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_GOOGLE_include_directive : require
-#include "pbr_gltf.glsl"
+
 #include "random.glsl"
-#include "raytrace_hdr.glsl"
+
 #include "raytrace_struct.glsl"
+
 #include "raytrace_utils.glsl"
+
+#include "pbr_gltf.glsl"
+
+#include "raytrace_hdr.glsl"
+
+
 
 layout(location = 0) rayPayloadInEXT RayPayload rayPayload;
 layout(location = 1) rayPayloadEXT bool inshadow;

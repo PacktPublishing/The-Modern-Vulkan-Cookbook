@@ -88,8 +88,7 @@ void printDigit(int digit, uint linenum, uint column) {
       linenum * (charHeightNDC + 3 * verSpaceNDC) + charHeightNDC + verSpaceNDC;
 
   debugPrintfEXT(
-      "width = %f, height = %f, colx = %f, coly = %f, horspace = %f, verspace "
-      "= %f",
+      "width = %f, height = %f, colx = %f, coly = %f, horspace = %f, verspace = %f",
       charWidthNDC, charHeightNDC, colx, coly, horSpaceNDC, verSpaceNDC);
 
   switch (digit) {
