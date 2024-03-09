@@ -70,9 +70,6 @@ void printSegment(int segment, vec2 pos, vec2 scale) {
   vec3 v1 = vec3(v[idy] * scale + pos, 1.0);
 
   addLine(v0, v1, vec4(0, 0, 0, 1), vec4(0, 0, 0, 1));
-
-  debugPrintfEXT("v0: (%f, %f, %f) , v1: (%f, %f, %f)", v0.x, v0.y, v0.z, v1.x,
-                 v1.y, v1.z);
 }
 
 void printDigit(int digit, uint linenum, uint column) {
@@ -86,10 +83,6 @@ void printDigit(int digit, uint linenum, uint column) {
       column * (charWidthNDC + horSpaceNDC) + charWidthNDC + horSpaceNDC;
   float coly =
       linenum * (charHeightNDC + 3 * verSpaceNDC) + charHeightNDC + verSpaceNDC;
-
-  debugPrintfEXT(
-      "width = %f, height = %f, colx = %f, coly = %f, horspace = %f, verspace = %f",
-      charWidthNDC, charHeightNDC, colx, coly, horSpaceNDC, verSpaceNDC);
 
   switch (digit) {
     case 0:
@@ -196,8 +189,6 @@ uint printNumber(highp int value, float decimals, uint linenum, uint column) {
     value = value - (digit * tens);
     tens /= 10;
     column++;
-    // debugPrintfEXT("tens = %d, digit = %d, value = %d, column = %d", tens,
-    // digit, value, column);
   }
 
   return column;
