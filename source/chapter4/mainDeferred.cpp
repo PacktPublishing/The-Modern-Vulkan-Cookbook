@@ -200,12 +200,6 @@ int main(int argc, char* argv[]) {
                hierarchicalDepthBufferPass.hierarchicalDepthTexture(),
                noisePass.noiseTexture());
 
-  // auto textureToDisplay = shadowPass.shadowDepthTexture();
-  // auto textureToDisplay = gbufferPass.depthTexture();
-  // auto textureToDisplay = ssaoPass.ssaoTexture();
-  //  hierarchicalDepthBufferPass.hierarchicalDepthTexture();
-
-  //  auto textureToDisplay = lightPass.lightTexture();
   auto textureToDisplay = ssrPass.insersectTexture();
 
   fullscreenPass.pipeline()->bindResource(0, 0, 0, {&textureToDisplay, 1}, samplers[0]);
@@ -382,7 +376,6 @@ int main(int argc, char* argv[]) {
                        cullingPass.culledIndirectDrawCountBuffer()->vkBuffer(), numMeshes,
                        sizeof(EngineCore::IndirectDrawCommandAndMeshData));
 
-    // if (lightData.lightCam.isDirty()) {
     shadowPass.render(commandBuffer, index,
                       {
                           {.set = CAMERA_SET, .bindIdx = (uint32_t)index},
@@ -393,7 +386,6 @@ int main(int argc, char* argv[]) {
                       buffers[1]->vkBuffer(), buffers[3]->vkBuffer(), numMeshes,
                       sizeof(EngineCore::IndirectDrawCommandAndMeshData));
     lightData.lightCam.setNotDirty();
-    //}
 
     noisePass.generateNoise(commandBuffer);
     hierarchicalDepthBufferPass.generateHierarchicalDepthBuffer(commandBuffer);
