@@ -14,17 +14,18 @@ bool mousePressed_ = false;
 
 static EngineCore::Camera* cameraPtr = nullptr;
 
-bool initWindow(GLFWwindow** outWindow, EngineCore::Camera* inCameraPtr, int width,
+bool initWindow(GLFWwindow** outWindow,
+                EngineCore::Camera* inCameraPtr,
+                int width,
                 int height) {
-  if (!glfwInit()) return false;
-
-  //(void*)::LoadLibraryA("C:/Program Files/RenderDoc/renderdoc.dll");
+  if (!glfwInit())
+    return false;
 
   cameraPtr = inCameraPtr;
 
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+  glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
   const char* title = "Modern Vulkan Cookbook";
-  glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
   // render full screen without overlapping taskbar
   GLFWmonitor* monitor = glfwGetPrimaryMonitor();
@@ -53,6 +54,13 @@ bool initWindow(GLFWwindow** outWindow, EngineCore::Camera* inCameraPtr, int wid
     return false;
   }
 
+#if defined(WIN32)
+  HWND hwnd = glfwGetWin32Window(window);
+  SetWindowLongPtr(
+      hwnd, GWL_STYLE,
+      GetWindowLongPtrA(hwnd, GWL_STYLE) & ~(WS_MAXIMIZEBOX | WS_MINIMIZEBOX));
+#endif
+
   glfwSetWindowPos(window, posX, posY);
 
   glfwSetErrorCallback([](int error, const char* description) {
@@ -75,59 +83,63 @@ bool initWindow(GLFWwindow** outWindow, EngineCore::Camera* inCameraPtr, int wid
     mousePos_ = newMousePos;
   });
 
-  glfwSetMouseButtonCallback(window, [](auto* window, int button, int action, int mods) {
-    if (ImGui::GetCurrentContext() && ImGui::GetIO().WantCaptureMouse) {
-      return;
-    }
-    if (button == GLFW_MOUSE_BUTTON_LEFT) mousePressed_ = (action == GLFW_PRESS);
-  });
+  glfwSetMouseButtonCallback(
+      window, [](auto* window, int button, int action, int mods) {
+        if (ImGui::GetCurrentContext() && ImGui::GetIO().WantCaptureMouse) {
+          return;
+        }
+        if (button == GLFW_MOUSE_BUTTON_LEFT)
+          mousePressed_ = (action == GLFW_PRESS);
+      });
 
-  glfwSetKeyCallback(window, [](GLFWwindow* window, int key, int, int action, int mods) {
-    if (ImGui::GetCurrentContext() && ImGui::GetIO().WantCaptureKeyboard) {
-      return;
-    }
-    const bool pressed = action != GLFW_RELEASE;
-    if (key == GLFW_KEY_ESCAPE && pressed) {
-      glfwSetWindowShouldClose(window, GLFW_TRUE);
-    }
+  glfwSetKeyCallback(
+      window, [](GLFWwindow* window, int key, int, int action, int mods) {
+        if (ImGui::GetCurrentContext() && ImGui::GetIO().WantCaptureKeyboard) {
+          return;
+        }
+        const bool pressed = action != GLFW_RELEASE;
+        if (key == GLFW_KEY_ESCAPE && pressed) {
+          glfwSetWindowShouldClose(window, GLFW_TRUE);
+        }
 
-    double deltaT = 1.f;
-    if (mods & GLFW_MOD_SHIFT) {
-      deltaT = 50.0f;
-    }
+        double deltaT = 1.f;
+        if (mods & GLFW_MOD_SHIFT) {
+          deltaT = 50.0f;
+        }
 
-    if (key == GLFW_KEY_ESCAPE && pressed) glfwSetWindowShouldClose(window, GLFW_TRUE);
-    if (key == GLFW_KEY_W && pressed) {
-      if (cameraPtr) {
-        cameraPtr->move(-cameraPtr->direction(), deltaT);
-      }
-    }
-    if (key == GLFW_KEY_S && pressed) {
-      if (cameraPtr) {
-        cameraPtr->move(cameraPtr->direction(), deltaT);
-      }
-    }
-    if (key == GLFW_KEY_A && pressed) {
-      if (cameraPtr) {
-        cameraPtr->move(-cameraPtr->right(), deltaT);
-      }
-    }
-    if (key == GLFW_KEY_D && pressed) {
-      if (cameraPtr) {
-        cameraPtr->move(cameraPtr->right(), deltaT);
-      }
-    }
-    if (key == GLFW_KEY_Q && pressed) {
-      if (cameraPtr) {
-        cameraPtr->move(glm::vec3(0.0f, 1.0f, 0.0f), deltaT);
-      }
-    }
-    if (key == GLFW_KEY_E && pressed) {
-      if (cameraPtr) {
-        cameraPtr->move(glm::vec3(0.0f, -1.0f, 0.0f), deltaT);
-      }
-    }
-  });
+        if (key == GLFW_KEY_ESCAPE && pressed)
+          glfwSetWindowShouldClose(window, GLFW_TRUE);
+        if (key == GLFW_KEY_W && pressed) {
+          if (cameraPtr) {
+            cameraPtr->move(-cameraPtr->direction(), deltaT);
+          }
+        }
+        if (key == GLFW_KEY_S && pressed) {
+          if (cameraPtr) {
+            cameraPtr->move(cameraPtr->direction(), deltaT);
+          }
+        }
+        if (key == GLFW_KEY_A && pressed) {
+          if (cameraPtr) {
+            cameraPtr->move(-cameraPtr->right(), deltaT);
+          }
+        }
+        if (key == GLFW_KEY_D && pressed) {
+          if (cameraPtr) {
+            cameraPtr->move(cameraPtr->right(), deltaT);
+          }
+        }
+        if (key == GLFW_KEY_Q && pressed) {
+          if (cameraPtr) {
+            cameraPtr->move(glm::vec3(0.0f, 1.0f, 0.0f), deltaT);
+          }
+        }
+        if (key == GLFW_KEY_E && pressed) {
+          if (cameraPtr) {
+            cameraPtr->move(glm::vec3(0.0f, -1.0f, 0.0f), deltaT);
+          }
+        }
+      });
 
   glfwGetWindowSize(window, &width_, &height_);
 

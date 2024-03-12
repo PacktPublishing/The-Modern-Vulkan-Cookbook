@@ -19,9 +19,11 @@
 GLFWwindow* window_ = nullptr;
 
 bool initWindow(GLFWwindow** outWindow) {
-  if (!glfwInit()) return false;
+  if (!glfwInit())
+    return false;
 
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+  glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
   const char* title = "Chapter 1 - Triangle";
 
   uint32_t posX = 200;
@@ -44,13 +46,22 @@ bool initWindow(GLFWwindow** outWindow) {
     printf("GLFW Error (%i): %s\n", error, description);
   });
 
-  glfwSetKeyCallback(window, [](GLFWwindow* window, int key, int, int action, int mods) {
-    const bool pressed = action != GLFW_RELEASE;
-    if (key == GLFW_KEY_ESCAPE && pressed) {
-      glfwSetWindowShouldClose(window, GLFW_TRUE);
-    }
-    if (key == GLFW_KEY_ESCAPE && pressed) glfwSetWindowShouldClose(window, GLFW_TRUE);
-  });
+  glfwSetKeyCallback(
+      window, [](GLFWwindow* window, int key, int, int action, int mods) {
+        const bool pressed = action != GLFW_RELEASE;
+        if (key == GLFW_KEY_ESCAPE && pressed) {
+          glfwSetWindowShouldClose(window, GLFW_TRUE);
+        }
+        if (key == GLFW_KEY_ESCAPE && pressed)
+          glfwSetWindowShouldClose(window, GLFW_TRUE);
+      });
+
+#if defined(WIN32)
+  HWND hwnd = glfwGetWin32Window(window);
+  SetWindowLongPtr(
+      hwnd, GWL_STYLE,
+      GetWindowLongPtrA(hwnd, GWL_STYLE) & ~(WS_MAXIMIZEBOX | WS_MINIMIZEBOX));
+#endif
 
   if (outWindow) {
     *outWindow = window;
@@ -69,18 +80,19 @@ int main(int argc, char** argv) {
 
   // Create Context
   VulkanCore::Context::enableDefaultFeatures();
-  VulkanCore::Context context((void*)glfwGetWin32Window(window_),
-                              validationLayers,  // layers
-                              {
-                                  VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
-                                  VK_KHR_SURFACE_EXTENSION_NAME,
-                                  VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
-                                  VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
-                                  VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME,
-                              },                                  // instance extensions
-                              {VK_KHR_SWAPCHAIN_EXTENSION_NAME},  // device extensions
-                              VK_QUEUE_GRAPHICS_BIT,  // request a graphics queue only
-                              true);
+  VulkanCore::Context context(
+      (void*)glfwGetWin32Window(window_),
+      validationLayers,  // layers
+      {
+          VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
+          VK_KHR_SURFACE_EXTENSION_NAME,
+          VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
+          VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+          VK_KHR_SHADER_NON_SEMANTIC_INFO_EXTENSION_NAME,
+      },                                  // instance extensions
+      {VK_KHR_SWAPCHAIN_EXTENSION_NAME},  // device extensions
+      VK_QUEUE_GRAPHICS_BIT,              // request a graphics queue only
+      true);
 
   // Create Swapchain
   const VkExtent2D extents =
@@ -92,13 +104,14 @@ int main(int argc, char** argv) {
   const VkRect2D renderArea = {.offset = {.x = 0, .y = 0}, .extent = extents};
 
   // Create Shader Modules
-  const auto shadersPath = std::filesystem::current_path() / "resources/shaders";
+  const auto shadersPath =
+      std::filesystem::current_path() / "resources/shaders";
   const auto vertexShaderPath = shadersPath / "triangle.vert";
   const auto fragShaderPath = shadersPath / "triangle.frag";
-  const auto vertexShader =
-      context.createShaderModule(vertexShaderPath.string(), VK_SHADER_STAGE_VERTEX_BIT);
-  const auto fragShader =
-      context.createShaderModule(fragShaderPath.string(), VK_SHADER_STAGE_FRAGMENT_BIT);
+  const auto vertexShader = context.createShaderModule(
+      vertexShaderPath.string(), VK_SHADER_STAGE_VERTEX_BIT);
+  const auto fragShader = context.createShaderModule(
+      fragShaderPath.string(), VK_SHADER_STAGE_FRAGMENT_BIT);
 
   // Create Framebuffers
   std::vector<std::shared_ptr<VulkanCore::Framebuffer>> swapchain_framebuffers(
@@ -159,12 +172,14 @@ int main(int argc, char** argv) {
     const VkRenderPassBeginInfo renderpassInfo = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .renderPass = renderPass->vkRenderPass(),
-        .framebuffer = swapchain_framebuffers[swapchainImageIndex]->vkFramebuffer(),
+        .framebuffer =
+            swapchain_framebuffers[swapchainImageIndex]->vkFramebuffer(),
         .renderArea = renderArea,
         .clearValueCount = 1,
         .pClearValues = &clearColor,
     };
-    vkCmdBeginRenderPass(commandBuffer, &renderpassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBeginRenderPass(commandBuffer, &renderpassInfo,
+                         VK_SUBPASS_CONTENTS_INLINE);
 
     pipeline->bind(commandBuffer);
 
@@ -173,8 +188,10 @@ int main(int argc, char** argv) {
     vkCmdEndRenderPass(commandBuffer);
 
     commandMgr.endCmdBuffer(commandBuffer);
-    constexpr VkPipelineStageFlags flags = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    const auto submitInfo = context.swapchain()->createSubmitInfo(&commandBuffer, &flags);
+    constexpr VkPipelineStageFlags flags =
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    const auto submitInfo =
+        context.swapchain()->createSubmitInfo(&commandBuffer, &flags);
     commandMgr.submit(&submitInfo);
     commandMgr.goToNextCmdBuffer();
 
