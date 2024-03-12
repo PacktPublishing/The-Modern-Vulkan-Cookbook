@@ -270,7 +270,7 @@ int main(int argc, char* argv[]) {
 
 #pragma endregion
 
-  float r = 1.f, g = 0.3f, b = 0.3f;
+  float r = 0.6f, g = 0.6f, b = 1.f;
   size_t frameIndex = 0;
   size_t previousFrameIndex = 0;
   const std::array<VkClearValue, 1> clearValues = {

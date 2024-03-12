@@ -340,7 +340,7 @@ int main(int argc, char* argv[]) {
   pipeline->bindResource(SAMPLER_SET, BINDING_0, 0, {samplers.begin(), 1});
 #pragma endregion
 
-  float r = 1.f, g = 0.3f, b = 0.3f;
+  float r = 0.6f, g = 0.6f, b = 1.f;
   size_t frame = 0;
   size_t previousFrame = 0;
   const std::array<VkClearValue, 2> clearValues = {
