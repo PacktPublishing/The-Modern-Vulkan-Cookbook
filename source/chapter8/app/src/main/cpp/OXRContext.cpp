@@ -40,6 +40,11 @@ namespace OXR {
       if (!initialized_) {
         return;
       }
+
+      xrDestroySpace(localReferenceSpace_);
+      xrDestroySpace(gazeActionSpace_);
+      xrDestroyAction(eyegazeAction_);
+      xrDestroyActionSet(eyegazeActionSet_);
       xrDestroySpace(stageSpace_);
       xrDestroySpace(localSpace_);
       xrDestroySpace(headSpace_);
