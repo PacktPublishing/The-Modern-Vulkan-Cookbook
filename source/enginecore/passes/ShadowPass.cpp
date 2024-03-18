@@ -86,7 +86,7 @@ void ShadowPass::init(VulkanCore::Context* context) {
       .colorTextureFormats = {},
       .depthTextureFormat = VK_FORMAT_D24_UNORM_S8_UINT,
       .sampleCount = VK_SAMPLE_COUNT_1_BIT,
-      .cullMode = VK_CULL_MODE_NONE,
+      .cullMode = VK_CULL_MODE_FRONT_BIT,
       .viewport =
           VkExtent2D{depthTexture_->vkExtents().width, depthTexture_->vkExtents().height},
       .depthTestEnable = true,

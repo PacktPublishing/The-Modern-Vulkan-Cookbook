@@ -68,7 +68,7 @@ float computeShadow(vec4 clipSpaceCoordWrtLight) {
   // y needs to be inverted in vulkan
   zeroToOneCoordWrtLight.y = 1.0 - zeroToOneCoordWrtLight.y;
 
-  const float depthBias = 0.00005;
+  const float depthBias = 0.00000005;
   zeroToOneCoordWrtLight.z = zeroToOneCoordWrtLight.z - depthBias;
 
 #if defined(USESAMPLERFORSHADOW)
