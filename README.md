@@ -20,7 +20,7 @@ This cookbook will uncover following useful techniques:
 The code has been tested with the following software:
 - Visual Studio 2022 Community Edition 16.11.8 (Windows)
 - CMake 3.27.2
-- Vulkan SDK 1.2.268
+- Vulkan SDK 1.3.268.0
 
 Only windows platform is tested. The code was tested with following Nvidia GPUs
 
