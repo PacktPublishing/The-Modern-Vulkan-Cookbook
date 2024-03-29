@@ -48,6 +48,8 @@ int main(int argc, char* argv[]) {
 #endif
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
     VK_EXT_MEMORY_BUDGET_EXTENSION_NAME,
+    VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+    VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
   };
 
   std::vector<std::string> validationLayers;
