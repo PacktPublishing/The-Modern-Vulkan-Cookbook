@@ -15,6 +15,7 @@
 #include <vulkan/vk_enum_string_helper.h>
 #endif
 
+#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
 
 #ifdef _WIN32

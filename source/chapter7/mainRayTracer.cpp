@@ -140,7 +140,7 @@ int main(int argc, char* argv[]) {
       glbLoader.load("resources/assets/Bistro.glb");
 
   EngineCore::convertModel2OneBuffer(context, commandMgr, commandBuffer, *bistro.get(),
-                                     buffers, textures, samplers);
+                                     buffers, textures, samplers, false, true);
 
   if (textures.size() == 0) {
     textures.push_back(context.createTexture(

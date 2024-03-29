@@ -409,9 +409,10 @@ void convertModel2OneMeshPerBuffer(
     VkCommandBuffer commandBuffer, const Model& model,
     std::vector<std::shared_ptr<VulkanCore::Buffer>>& buffers,
     std::vector<std::shared_ptr<VulkanCore::Texture>>& textures,
-    std::vector<std::shared_ptr<VulkanCore::Sampler>>& samplers) {
+    std::vector<std::shared_ptr<VulkanCore::Sampler>>& samplers,
+    bool makeBuffersSuitableForAccelStruct) {
   convertModel2OneMeshPerBuffer(context, queueMgr, commandBuffer, model, buffers,
-                                samplers);
+                                samplers, makeBuffersSuitableForAccelStruct);
 
   for (size_t textureIndex = 0; const auto& texture : model.textures) {
     textures.emplace_back(context.createTexture(
@@ -444,13 +445,17 @@ void convertModel2OneMeshPerBuffer(
     const VulkanCore::Context& context, VulkanCore::CommandQueueManager& queueMgr,
     VkCommandBuffer commandBuffer, const Model& model,
     std::vector<std::shared_ptr<VulkanCore::Buffer>>& buffers,
-    std::vector<std::shared_ptr<VulkanCore::Sampler>>& samplers) {
+    std::vector<std::shared_ptr<VulkanCore::Sampler>>& samplers,
+    bool makeBuffersSuitableForAccelStruct) {
   for (size_t meshIndex = 0; const auto& mesh : model.meshes) {
     const auto verticesSize = sizeof(Vertex) * mesh.vertices.size();
+
+
+
     buffers.emplace_back(context.createBuffer(
         verticesSize,
         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
-            VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+            (makeBuffersSuitableForAccelStruct ? VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR : 0) |
 #if defined(VK_KHR_buffer_device_address) && defined(_WIN32)
             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
 #endif
@@ -467,7 +472,7 @@ void convertModel2OneMeshPerBuffer(
     buffers.emplace_back(context.createBuffer(
         indicesSize,
         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-            VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+                (makeBuffersSuitableForAccelStruct ? VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR : 0) |
 #if defined(VK_KHR_buffer_device_address) && defined(_WIN32)
             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
 #endif
@@ -489,7 +494,9 @@ void convertModel2OneMeshPerBuffer(
   buffers.emplace_back(context.createBuffer(
       totalMaterialSize,
       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-          VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
+              (makeBuffersSuitableForAccelStruct
+          ? VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
+          : 0)
 #if defined(VK_KHR_buffer_device_address) && defined(_WIN32)
           | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
 #endif
@@ -507,9 +514,10 @@ void convertModel2OneBuffer(const VulkanCore::Context& context,
                             std::vector<std::shared_ptr<VulkanCore::Buffer>>& buffers,
                             std::vector<std::shared_ptr<VulkanCore::Texture>>& textures,
                             std::vector<std::shared_ptr<VulkanCore::Sampler>>& samplers,
-                            bool useHalfFloatVertices) {
+                            bool useHalfFloatVertices,
+                            bool makeBuffersSuitableForAccelStruct) {
   convertModel2OneBuffer(context, queueMgr, commandBuffer, model, buffers, samplers,
-                         useHalfFloatVertices);
+                         useHalfFloatVertices, makeBuffersSuitableForAccelStruct);
 
   for (size_t textureIndex = 0; const auto& texture : model.textures) {
     textures.emplace_back(context.createTexture(
@@ -557,15 +565,17 @@ void convertModel2OneBuffer(const VulkanCore::Context& context,
                             VkCommandBuffer commandBuffer, const Model& model,
                             std::vector<std::shared_ptr<VulkanCore::Buffer>>& buffers,
                             std::vector<std::shared_ptr<VulkanCore::Sampler>>& samplers,
-                            bool useHalfFloatVertices) {
+                            bool useHalfFloatVertices,
+                            bool makeBuffersSuitableForAccelStruct) {
   // Vertex buffer
   buffers.emplace_back(context.createBuffer(
       model.totalVertexSize,
 #if defined(VK_KHR_buffer_device_address) && defined(_WIN32)
       VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
 #endif
-          VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-          VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+          VK_BUFFER_USAGE_TRANSFER_DST_BIT | (makeBuffersSuitableForAccelStruct
+          ? VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
+          : 0) |
           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
       VMA_MEMORY_USAGE_GPU_ONLY, "vertex"));
 
@@ -577,8 +587,9 @@ void convertModel2OneBuffer(const VulkanCore::Context& context,
 #endif
 
           VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-          VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-          VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+          VK_BUFFER_USAGE_INDEX_BUFFER_BIT | (makeBuffersSuitableForAccelStruct
+          ? VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
+          : 0) |
           VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
       VMA_MEMORY_USAGE_GPU_ONLY, "index"));
 
@@ -643,7 +654,9 @@ void convertModel2OneBuffer(const VulkanCore::Context& context,
 #endif
 
           VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-          VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+              (makeBuffersSuitableForAccelStruct
+          ? VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
+          : 0),
       VMA_MEMORY_USAGE_GPU_ONLY, "materials"));
 
   context.uploadToGPUBuffer(queueMgr, commandBuffer, buffers[2].get(),
@@ -660,7 +673,9 @@ void convertModel2OneBuffer(const VulkanCore::Context& context,
       VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
 #endif
           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-          VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+              (makeBuffersSuitableForAccelStruct
+          ? VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
+          : 0) |
           VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
       VMA_MEMORY_USAGE_GPU_ONLY, "IndirectDraw"));
 
@@ -678,7 +693,8 @@ void convertModel2OneBufferOptimized(
     VkCommandBuffer commandBuffer, const Model& model,
     std::vector<std::shared_ptr<VulkanCore::Buffer>>& buffers,
     std::vector<std::shared_ptr<VulkanCore::Texture>>& textures,
-    std::vector<std::shared_ptr<VulkanCore::Sampler>>& samplers) {
+    std::vector<std::shared_ptr<VulkanCore::Sampler>>& samplers,
+    bool makeBuffersSuitableForAccelStruct) {
   std::vector<std::pair<size_t, size_t>> indexOffsets;
   indexOffsets.reserve(model.meshes.size());
   std::vector<EngineCore::Vertex> vertexData;
@@ -730,8 +746,9 @@ void convertModel2OneBufferOptimized(
 #if defined(VK_KHR_buffer_device_address) && defined(_WIN32)
       VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
 #endif
-          VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-          VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+          VK_BUFFER_USAGE_TRANSFER_DST_BIT | (makeBuffersSuitableForAccelStruct
+          ? VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
+          : 0) |
           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
       VMA_MEMORY_USAGE_GPU_ONLY, "vertex"));
 
@@ -746,8 +763,9 @@ void convertModel2OneBufferOptimized(
 #if defined(VK_KHR_buffer_device_address) && defined(_WIN32)
       VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
 #endif
-          VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-          VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+          VK_BUFFER_USAGE_TRANSFER_DST_BIT | (makeBuffersSuitableForAccelStruct
+          ? VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
+          : 0) |
           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
           VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
       VMA_MEMORY_USAGE_GPU_ONLY, "index"));
@@ -763,8 +781,9 @@ void convertModel2OneBufferOptimized(
 #if defined(VK_KHR_buffer_device_address) && defined(_WIN32)
       VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
 #endif
-          VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-          VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+          VK_BUFFER_USAGE_TRANSFER_DST_BIT | (makeBuffersSuitableForAccelStruct
+          ? VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
+          : 0) |
           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
       VMA_MEMORY_USAGE_GPU_ONLY, "materials"));
 

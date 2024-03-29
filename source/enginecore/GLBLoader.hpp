@@ -51,13 +51,14 @@ void convertModel2OneMeshPerBuffer(
     VkCommandBuffer commandBuffer, const Model& model,
     std::vector<std::shared_ptr<VulkanCore::Buffer>>& buffers,
     std::vector<std::shared_ptr<VulkanCore::Texture>>& textures,
-    std::vector<std::shared_ptr<VulkanCore::Sampler>>& samplers);
+    std::vector<std::shared_ptr<VulkanCore::Sampler>>& samplers,
+    bool makeBuffersSuitableForAccelStruct = false);
 
 void convertModel2OneMeshPerBuffer(
     const VulkanCore::Context& context, VulkanCore::CommandQueueManager& queueMgr,
     VkCommandBuffer commandBuffer, const Model& model,
     std::vector<std::shared_ptr<VulkanCore::Buffer>>& buffers,
-    std::vector<std::shared_ptr<VulkanCore::Sampler>>& samplers);
+    std::vector<std::shared_ptr<VulkanCore::Sampler>>& samplers, bool makeBuffersSuitableForAccelStruct = false);
 
 /// @brief Produces 4 buffers:
 ///   [0] vertex buffer
@@ -70,14 +71,15 @@ void convertModel2OneBuffer(const VulkanCore::Context& context,
                             std::vector<std::shared_ptr<VulkanCore::Buffer>>& buffers,
                             std::vector<std::shared_ptr<VulkanCore::Texture>>& textures,
                             std::vector<std::shared_ptr<VulkanCore::Sampler>>& samplers,
-                            bool useHalfFloatVertices = false);
+                            bool useHalfFloatVertices = false, bool makeBuffersSuitableForAccelStruct = false);
 
 void convertModel2OneBuffer(const VulkanCore::Context& context,
                             VulkanCore::CommandQueueManager& queueMgr,
                             VkCommandBuffer commandBuffer, const Model& model,
                             std::vector<std::shared_ptr<VulkanCore::Buffer>>& buffers,
                             std::vector<std::shared_ptr<VulkanCore::Sampler>>& samplers,
-                            bool useHalfFloatVertices = false);
+                            bool useHalfFloatVertices = false,
+                            bool makeBuffersSuitableForAccelStruct = false);
 
 /// @brief Produces 3 buffers:
 ///   [0] (optimized) vertex buffer
@@ -88,5 +90,6 @@ void convertModel2OneBufferOptimized(
     VkCommandBuffer commandBuffer, const Model& model,
     std::vector<std::shared_ptr<VulkanCore::Buffer>>& buffers,
     std::vector<std::shared_ptr<VulkanCore::Texture>>& textures,
-    std::vector<std::shared_ptr<VulkanCore::Sampler>>& samplers);
+    std::vector<std::shared_ptr<VulkanCore::Sampler>>& samplers,
+    bool makeBuffersSuitableForAccelStruct = false);
 }  // namespace EngineCore

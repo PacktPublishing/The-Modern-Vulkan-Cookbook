@@ -224,7 +224,7 @@ int main(int argc, char* argv[]) {
           glbLoader.load("resources/assets/Bistro.glb", pool, glbTextureDataLoadedCB);
       TracyVkZone(tracyCtx_, commandBuffer, "Model upload");
       EngineCore::convertModel2OneBuffer(context, commandMgr, commandBuffer,
-                                         *bistro.get(), buffers, samplers);
+                                         *bistro.get(), buffers, samplers, false, true);
       textures.resize(bistro->textures.size(), emptyTexture);
       numMeshes = bistro->meshes.size();
     }
