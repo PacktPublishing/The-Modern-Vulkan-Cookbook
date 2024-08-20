@@ -33,4 +33,12 @@ Only windows platform is tested. The code was tested with following Nvidia GPUs
 
 We recommend that you clone the repo instead of directly downloading it, this can be done using `git clone https://github.com/PacktPublishing/The-Modern-Vulkan-Cookbook.git`
 
-After cloning, you can open the Project in Visual Studio 2022: Launch Visual Studio 2022. Navigate to File | Open | Folder and select the folder where you cloned the repository. This action will load the project into Visual Studio. Click Build all to build all project, you should be able to select executable for each chapter from this single solution. 
+If you encounter an error related to the LFS (Large File Storage) file Bistro.glb while cloning the repository, the error might look like this: Error downloading object: source/common/resources/assets/Bistro.glb: Smudge error
+
+1.) set GIT_LFS_SKIP_SMUDGE=1 on terminal
+2.) git clone https://github.com/PacktPublishing/The-Modern-Vulkan-Cookbook.git
+3.) Download Bistro.glb from https://1drv.ms/u/s!AsOHFR8SHZcxhONARRHaUFqKd8BXOA?e=KsdErS and copy it in source/common/resources/assets, replace existing Bistro.glb with the new one you downloaded. 
+
+By following these steps, you should be able to clone the repository and resolve any LFS-related errors with the Bistro.glb file.
+
+After cloning, you can open the Project in Visual Studio 2022: Launch Visual Studio 2022. Navigate to File | Open | Folder and select the folder where you cloned the repository. This action will load the project into Visual Studio. Click Build all to build all project, you should be able to select an executable for each chapter from this single solution. 
