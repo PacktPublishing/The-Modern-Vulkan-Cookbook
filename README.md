@@ -35,9 +35,9 @@ We recommend that you clone the repo instead of directly downloading it, this ca
 
 If you encounter an error related to the LFS (Large File Storage) file Bistro.glb while cloning the repository, the error might look like this: Error downloading object: source/common/resources/assets/Bistro.glb: Smudge error
 
-1.) set GIT_LFS_SKIP_SMUDGE=1 on terminal
-2.) git clone https://github.com/PacktPublishing/The-Modern-Vulkan-Cookbook.git
-3.) Download Bistro.glb from https://1drv.ms/u/s!AsOHFR8SHZcxhONARRHaUFqKd8BXOA?e=KsdErS and copy it in source/common/resources/assets, replace existing Bistro.glb with the new one you downloaded. 
+- 1.) set GIT_LFS_SKIP_SMUDGE=1 on terminal
+- 2.) git clone https://github.com/PacktPublishing/The-Modern-Vulkan-Cookbook.git
+- 3.) Download Bistro.glb from https://1drv.ms/u/s!AsOHFR8SHZcxhONARRHaUFqKd8BXOA?e=KsdErS and copy it in source/common/resources/assets, replace existing Bistro.glb with the new one you downloaded. 
 
 By following these steps, you should be able to clone the repository and resolve any LFS-related errors with the Bistro.glb file.
 
