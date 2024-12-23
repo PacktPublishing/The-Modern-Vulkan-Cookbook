@@ -236,128 +236,7 @@ Context::Context(void* window, const std::vector<std::string>& requestedLayers,
       enumeratePhysicalDevices(requestedDeviceExtensions, enableRayTracing),
       requestedDeviceExtensions);
 
-  // Always request a graphics queue
-  physicalDevice_.reserveQueues(requestedQueueTypes | VK_QUEUE_GRAPHICS_BIT, surface_);
-
-  // Create the device
-  {
-    // Transform list of enabled extensions from std::string to const char *
-    std::vector<const char*> deviceExtensions(physicalDevice_.enabledExtensions().size());
-    std::transform(physicalDevice_.enabledExtensions().begin(),
-                   physicalDevice_.enabledExtensions().end(), deviceExtensions.begin(),
-                   std::mem_fn(&std::string::c_str));
-
-    const auto familyIndices = physicalDevice_.queueFamilyIndexAndCount();
-
-    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-
-    std::vector<std::vector<float>> prioritiesForAllFamilies(familyIndices.size());
-    for (size_t index = 0; const auto& [queueFamilyIndex, queueCount] : familyIndices) {
-      prioritiesForAllFamilies[index] = std::vector<float>(queueCount, 1.0f);
-      queueCreateInfos.emplace_back(VkDeviceQueueCreateInfo{
-          .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-          .queueFamilyIndex = queueFamilyIndex,
-          .queueCount = queueCount,
-          .pQueuePriorities = prioritiesForAllFamilies[index].data(),
-      });
-      ++index;
-    }
-
-    const VkPhysicalDeviceFeatures2 deviceFeatures = {
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-        .features = physicalDeviceFeatures_,
-    };
-
-    VulkanFeatureChain<> featureChain;
-
-    featureChain.pushBack(deviceFeatures);
-
-    featureChain.pushBack(enable11Features_);
-    featureChain.pushBack(enable12Features_);
-    featureChain.pushBack(enable13Features_);
-
-    if (physicalDevice_.isRayTracingSupported()) {
-      featureChain.pushBack(accelStructFeatures_);
-      featureChain.pushBack(rayTracingPipelineFeatures_);
-      featureChain.pushBack(rayQueryFeatures_);
-    }
-
-    if (physicalDevice_.isMultiviewSupported() && enableMultiViewFlag_) {
-      enable11Features_.multiview = VK_TRUE;
-    }
-
-    if (physicalDevice_.isFragmentDensityMapSupported()) {
-      featureChain.pushBack(fragmentDensityMapFeatures_);
-    }
-
-    if (physicalDevice_.isFragmentDensityMapOffsetSupported()) {
-      featureChain.pushBack(fragmentDensityMapOffsetFeatures_);
-    }
-
-    const VkDeviceCreateInfo dci = {
-        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pNext = featureChain.firstNextPtr(),
-        .queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size()),
-        .pQueueCreateInfos = queueCreateInfos.data(),
-        .enabledLayerCount = static_cast<uint32_t>(instanceLayers.size()),
-        .ppEnabledLayerNames = instanceLayers.data(),
-        .enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size()),
-        .ppEnabledExtensionNames = deviceExtensions.data(),
-    };
-    VK_CHECK(vkCreateDevice(physicalDevice_.vkPhysicalDevice(), &dci, nullptr, &device_));
-    setVkObjectname(device_, VK_OBJECT_TYPE_DEVICE, "Device");
-  }
-
-  if (physicalDevice_.graphicsFamilyIndex().has_value()) {
-    if (physicalDevice_.graphicsFamilyCount() > 0) {
-      graphicsQueues_.resize(physicalDevice_.graphicsFamilyCount(), VK_NULL_HANDLE);
-
-      for (int i = 0; i < graphicsQueues_.size(); ++i) {
-        vkGetDeviceQueue(device_, physicalDevice_.graphicsFamilyIndex().value(),
-                         uint32_t(i), &graphicsQueues_[i]);
-      }
-    }
-  }
-  if (physicalDevice_.computeFamilyIndex().has_value()) {
-    if (physicalDevice_.computeFamilyCount() > 0) {
-      computeQueues_.resize(physicalDevice_.computeFamilyCount(), VK_NULL_HANDLE);
-
-      for (int i = 0; i < computeQueues_.size(); ++i) {
-        vkGetDeviceQueue(device_, physicalDevice_.computeFamilyIndex().value(),
-                         uint32_t(i), &computeQueues_[i]);
-      }
-    }
-  }
-  if (physicalDevice_.transferFamilyIndex().has_value()) {
-    if (physicalDevice_.transferFamilyCount() > 0) {
-      transferQueues_.resize(physicalDevice_.transferFamilyCount(), VK_NULL_HANDLE);
-
-      for (int i = 0; i < transferQueues_.size(); ++i) {
-        vkGetDeviceQueue(device_, physicalDevice_.transferFamilyIndex().value(),
-                         uint32_t(i), &transferQueues_[i]);
-      }
-    }
-  }
-  if (physicalDevice_.sparseFamilyIndex().has_value()) {
-    if (physicalDevice_.sparseFamilyCount() > 0) {
-      sparseQueues_.resize(physicalDevice_.sparseFamilyCount(), VK_NULL_HANDLE);
-
-      for (int i = 0; i < sparseQueues_.size(); ++i) {
-        vkGetDeviceQueue(device_, physicalDevice_.sparseFamilyIndex().value(),
-                         uint32_t(i), &sparseQueues_[i]);
-      }
-    }
-  }
-  if (physicalDevice_.presentationFamilyIndex().has_value()) {
-    vkGetDeviceQueue(device_, physicalDevice_.presentationFamilyIndex().value(), 0,
-                     &presentationQueue_);
-  }
-
-  // Initialize volk for this device
-  volkLoadDevice(device_);
-
-  // Create the allocator
-  createMemoryAllocator();
+  createVkDevice(physicalDevice_, instanceLayers, requestedQueueTypes);
 
   // Naming objects created before we had a device
   setVkObjectname(surface_, VK_OBJECT_TYPE_SURFACE_KHR, "Surface: " + name);
@@ -444,25 +323,21 @@ Context::Context(const VkApplicationInfo& appInfo,
   }
 }
 
-void Context::createVkDevice(VkPhysicalDevice vkPhysicalDevice,
-                             const std::vector<std::string>& requestedDeviceExtensions,
+void Context::createVkDevice(PhysicalDevice& physicalDevice,
+                             const std::vector<const char*>& enabledInstanceLayers,
                              VkQueueFlags requestedQueueTypes, const std::string& name) {
-  physicalDevice_ = PhysicalDevice(vkPhysicalDevice, VK_NULL_HANDLE,
-                                   requestedDeviceExtensions, printEnumerations_, false);
-
   // Always request a graphics queue
-  physicalDevice_.reserveQueues(requestedQueueTypes | VK_QUEUE_GRAPHICS_BIT,
-                                VK_NULL_HANDLE);
+  physicalDevice.reserveQueues(requestedQueueTypes | VK_QUEUE_GRAPHICS_BIT, surface_);
 
   // Create the device
   {
     // Transform list of enabled extensions from std::string to const char *
-    std::vector<const char*> deviceExtensions(physicalDevice_.enabledExtensions().size());
-    std::transform(physicalDevice_.enabledExtensions().begin(),
-                   physicalDevice_.enabledExtensions().end(), deviceExtensions.begin(),
+    std::vector<const char*> deviceExtensions(physicalDevice.enabledExtensions().size());
+    std::transform(physicalDevice.enabledExtensions().begin(),
+                   physicalDevice.enabledExtensions().end(), deviceExtensions.begin(),
                    std::mem_fn(&std::string::c_str));
 
-    const auto familyIndices = physicalDevice_.queueFamilyIndexAndCount();
+    const auto familyIndices = physicalDevice.queueFamilyIndexAndCount();
 
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
 
@@ -478,7 +353,7 @@ void Context::createVkDevice(VkPhysicalDevice vkPhysicalDevice,
       ++index;
     }
 
-    VkPhysicalDeviceFeatures2 deviceFeatures = {
+    const VkPhysicalDeviceFeatures2 deviceFeatures = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
         .features = physicalDeviceFeatures_,
     };
@@ -502,84 +377,80 @@ void Context::createVkDevice(VkPhysicalDevice vkPhysicalDevice,
     deviceFeatures.pNext = &bufferDeviceAddrFeature;
 #endif
 
-    if (physicalDevice_.isRayTracingSupported()) {
+    if (physicalDevice.isRayTracingSupported()) {
       featureChain.pushBack(accelStructFeatures_);
       featureChain.pushBack(rayTracingPipelineFeatures_);
       featureChain.pushBack(rayQueryFeatures_);
     }
 
-    if (physicalDevice_.isMultiviewSupported() && enableMultiViewFlag_) {
+    if (physicalDevice.isMultiviewSupported() && enableMultiViewFlag_) {
       enable11Features_.multiview = VK_TRUE;
     }
 
-    if (physicalDevice_.isFragmentDensityMapSupported()) {
+    if (physicalDevice.isFragmentDensityMapSupported()) {
       featureChain.pushBack(fragmentDensityMapFeatures_);
     }
 
-    if (physicalDevice_.isFragmentDensityMapOffsetSupported()) {
+    if (physicalDevice.isFragmentDensityMapOffsetSupported()) {
       featureChain.pushBack(fragmentDensityMapOffsetFeatures_);
     }
-
-    std::vector<const char*> instanceLayers(enabledLayers_.size());
-    std::transform(enabledLayers_.begin(), enabledLayers_.end(), instanceLayers.begin(),
-                   std::mem_fn(&std::string::c_str));
 
     const VkDeviceCreateInfo dci = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pNext = featureChain.firstNextPtr(),
         .queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size()),
         .pQueueCreateInfos = queueCreateInfos.data(),
-        .enabledLayerCount = static_cast<uint32_t>(instanceLayers.size()),
-        .ppEnabledLayerNames = instanceLayers.data(),
+        .enabledLayerCount = static_cast<uint32_t>(enabledInstanceLayers.size()),
+        .ppEnabledLayerNames = enabledInstanceLayers.data(),
         .enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size()),
         .ppEnabledExtensionNames = deviceExtensions.data(),
     };
-    VK_CHECK(vkCreateDevice(physicalDevice_.vkPhysicalDevice(), &dci, nullptr, &device_));
+    VK_CHECK(vkCreateDevice(physicalDevice.vkPhysicalDevice(), &dci, nullptr, &device_));
     setVkObjectname(device_, VK_OBJECT_TYPE_DEVICE, "Device");
   }
 
-  if (physicalDevice_.graphicsFamilyIndex().has_value()) {
-    if (physicalDevice_.graphicsFamilyCount() > 0) {
-      graphicsQueues_.resize(physicalDevice_.graphicsFamilyCount(), VK_NULL_HANDLE);
+  if (physicalDevice.graphicsFamilyIndex().has_value()) {
+    if (physicalDevice.graphicsFamilyCount() > 0) {
+      graphicsQueues_.resize(physicalDevice.graphicsFamilyCount(), VK_NULL_HANDLE);
 
       for (int i = 0; i < graphicsQueues_.size(); ++i) {
-        vkGetDeviceQueue(device_, physicalDevice_.graphicsFamilyIndex().value(),
+        vkGetDeviceQueue(device_, physicalDevice.graphicsFamilyIndex().value(),
                          uint32_t(i), &graphicsQueues_[i]);
       }
     }
   }
-  if (physicalDevice_.computeFamilyIndex().has_value()) {
-    if (physicalDevice_.computeFamilyCount() > 0) {
-      computeQueues_.resize(physicalDevice_.computeFamilyCount(), VK_NULL_HANDLE);
+  if (physicalDevice.computeFamilyIndex().has_value()) {
+    if (physicalDevice.computeFamilyCount() > 0) {
+      computeQueues_.resize(physicalDevice.computeFamilyCount(), VK_NULL_HANDLE);
 
       for (int i = 0; i < computeQueues_.size(); ++i) {
-        vkGetDeviceQueue(device_, physicalDevice_.computeFamilyIndex().value(),
+        vkGetDeviceQueue(device_, physicalDevice.computeFamilyIndex().value(),
                          uint32_t(i), &computeQueues_[i]);
       }
     }
   }
-  if (physicalDevice_.transferFamilyIndex().has_value()) {
-    if (physicalDevice_.transferFamilyCount() > 0) {
-      transferQueues_.resize(physicalDevice_.transferFamilyCount(), VK_NULL_HANDLE);
+  if (physicalDevice.transferFamilyIndex().has_value()) {
+    if (physicalDevice.transferFamilyCount() > 0) {
+      transferQueues_.resize(physicalDevice.transferFamilyCount(), VK_NULL_HANDLE);
 
       for (int i = 0; i < transferQueues_.size(); ++i) {
-        vkGetDeviceQueue(device_, physicalDevice_.transferFamilyIndex().value(),
+        vkGetDeviceQueue(device_, physicalDevice.transferFamilyIndex().value(),
                          uint32_t(i), &transferQueues_[i]);
       }
     }
   }
-  if (physicalDevice_.sparseFamilyIndex().has_value()) {
-    if (physicalDevice_.sparseFamilyCount() > 0) {
-      sparseQueues_.resize(physicalDevice_.sparseFamilyCount(), VK_NULL_HANDLE);
+  if (physicalDevice.sparseFamilyIndex().has_value()) {
+    if (physicalDevice.sparseFamilyCount() > 0) {
+      sparseQueues_.resize(physicalDevice.sparseFamilyCount(), VK_NULL_HANDLE);
 
       for (int i = 0; i < sparseQueues_.size(); ++i) {
-        vkGetDeviceQueue(device_, physicalDevice_.sparseFamilyIndex().value(),
+        vkGetDeviceQueue(device_, physicalDevice.sparseFamilyIndex().value(),
                          uint32_t(i), &sparseQueues_[i]);
       }
     }
   }
-  if (physicalDevice_.presentationFamilyIndex().has_value()) {
-    vkGetDeviceQueue(device_, physicalDevice_.presentationFamilyIndex().value(), 0,
+  if (physicalDevice.presentationFamilyIndex().has_value()) {
+    vkGetDeviceQueue(device_, physicalDevice.presentationFamilyIndex().value(), 0,
                      &presentationQueue_);
   }
 

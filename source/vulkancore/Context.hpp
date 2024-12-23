@@ -67,8 +67,8 @@ class Context final {
                    const std::vector<std::string>& requestedInstanceExtensions,
                    bool printEnumerations = false, const std::string& name = "");
 
-  void createVkDevice(VkPhysicalDevice vkPhysicalDevice,
-                      const std::vector<std::string>& requestedDeviceExtensions,
+  void createVkDevice(PhysicalDevice& physicalDevice,
+                      const std::vector<const char*>& enabledInstanceLayers,
                       VkQueueFlags requestedQueueTypes, const std::string& name = "");
 
   ~Context();
