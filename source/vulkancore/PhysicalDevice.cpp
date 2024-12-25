@@ -106,7 +106,11 @@ void PhysicalDevice::reserveQueues(VkQueueFlags requestedQueueTypes,
   // we treat each queue as independent and it can only be used either for
   // graphics/compute/transfer or sparse, this helps us with multithreading,
   // however if the device only have one queue for all, then because of this
-  // code we may not be able to create compute/transfer queues
+  // code we may not be able to create compute/transfer queues.
+  // Even though the GPU may offer multiple queues per family, our code doesn't
+  // use parallel submits or parallel queues; therefore, we are hardcoding the
+  // number of queues per each family to one, since we only use the first queue
+  // to submit our workloads.
   for (uint32_t queueFamilyIndex = 0;
        queueFamilyIndex < queueFamilyProperties_.size() && requestedQueueTypes != 0;
        ++queueFamilyIndex) {
@@ -116,14 +120,14 @@ void PhysicalDevice::reserveQueues(VkQueueFlags requestedQueueTypes,
                                            &supportsPresent);
       if (supportsPresent == VK_TRUE) {
         presentationFamilyIndex_ = queueFamilyIndex;
-        presentationQueueCount_ = queueFamilyProperties_[queueFamilyIndex].queueCount;
+        presentationQueueCount_ = 1;
       }
     }
     if (!graphicsFamilyIndex_.has_value() &&
         (requestedQueueTypes & queueFamilyProperties_[queueFamilyIndex].queueFlags) &
             VK_QUEUE_GRAPHICS_BIT) {
       graphicsFamilyIndex_ = queueFamilyIndex;
-      graphicsQueueCount_ = queueFamilyProperties_[queueFamilyIndex].queueCount;
+      graphicsQueueCount_ = 1;
       requestedQueueTypes &= ~VK_QUEUE_GRAPHICS_BIT;
       continue;
     }
@@ -132,7 +136,7 @@ void PhysicalDevice::reserveQueues(VkQueueFlags requestedQueueTypes,
         (requestedQueueTypes & queueFamilyProperties_[queueFamilyIndex].queueFlags) &
             VK_QUEUE_COMPUTE_BIT) {
       computeFamilyIndex_ = queueFamilyIndex;
-      computeQueueCount_ = queueFamilyProperties_[queueFamilyIndex].queueCount;
+      computeQueueCount_ = 1;
       requestedQueueTypes &= ~VK_QUEUE_COMPUTE_BIT;
       continue;
     }
@@ -141,7 +145,7 @@ void PhysicalDevice::reserveQueues(VkQueueFlags requestedQueueTypes,
         (requestedQueueTypes & queueFamilyProperties_[queueFamilyIndex].queueFlags) &
             VK_QUEUE_TRANSFER_BIT) {
       transferFamilyIndex_ = queueFamilyIndex;
-      transferQueueCount_ = queueFamilyProperties_[queueFamilyIndex].queueCount;
+      transferQueueCount_ = 1;
       requestedQueueTypes &= ~VK_QUEUE_TRANSFER_BIT;
       continue;
     }
@@ -150,7 +154,7 @@ void PhysicalDevice::reserveQueues(VkQueueFlags requestedQueueTypes,
         (requestedQueueTypes & queueFamilyProperties_[queueFamilyIndex].queueFlags) &
             VK_QUEUE_SPARSE_BINDING_BIT) {
       sparseFamilyIndex_ = queueFamilyIndex;
-      sparseQueueCount_ = queueFamilyProperties_[queueFamilyIndex].queueCount;
+      sparseQueueCount_ = 1;
       requestedQueueTypes &= ~VK_QUEUE_SPARSE_BINDING_BIT;
       continue;
     }
