@@ -19,10 +19,11 @@ find_package(Vulkan REQUIRED SPIRV-Tools)
 # Download dependencies automatically
 include(FetchContent)
 
-if (VulkanHeaderVersion GREATER_EQUAL 275)
+# Comparing the current Vulkan version with 1.3.275
+if (VulkanHeaderVersion2 GREATER_EQUAL 13275)
   FetchContent_Declare(glslang
       GIT_REPOSITORY https://github.com/KhronosGroup/glslang
-      GIT_TAG vulkan-sdk-1.3.${VulkanHeaderVersion}.0)
+      GIT_TAG vulkan-sdk-${Vulkan_VERSION}.0)
   if (NOT glslang_POPULATED)
     set(ENABLE_OPT OFF)
   endif()
