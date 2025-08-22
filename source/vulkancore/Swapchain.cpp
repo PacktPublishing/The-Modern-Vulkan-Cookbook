@@ -67,7 +67,9 @@ Swapchain::Swapchain(const Context& context, const PhysicalDevice& physicalDevic
 Swapchain::~Swapchain() {
   VK_CHECK(vkWaitForFences(device_, 1, &acquireFence_, VK_TRUE, UINT64_MAX));
   vkDestroyFence(device_, acquireFence_, nullptr);
-  vkDestroySemaphore(device_, imageRendered_, nullptr);
+  for (auto s : imagesRendered_) {
+    vkDestroySemaphore(device_, s, nullptr);
+  }
   for (auto s : imagesAvailable_) {
     vkDestroySemaphore(device_, s, nullptr);
   }
@@ -103,8 +105,8 @@ VkSubmitInfo Swapchain::createSubmitInfo(const VkCommandBuffer* buffer,
       .pWaitDstStageMask = submitStageMask,
       .commandBufferCount = 1,
       .pCommandBuffers = buffer,
-      .signalSemaphoreCount = signalImagePresented ? (imageRendered_ ? 1u : 0) : 0,
-      .pSignalSemaphores = signalImagePresented ? &imageRendered_ : VK_NULL_HANDLE,
+      .signalSemaphoreCount = signalImagePresented ? (imagesRendered_[imageIndex_] ? 1u : 0) : 0,
+      .pSignalSemaphores = signalImagePresented ? &imagesRendered_[imageIndex_] : VK_NULL_HANDLE,
   };
 
   if (waitForImageAvailable) {
@@ -119,7 +121,7 @@ void Swapchain::present() const {
   const VkPresentInfoKHR presentInfo{
       .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
       .waitSemaphoreCount = 1,
-      .pWaitSemaphores = &imageRendered_,
+      .pWaitSemaphores = &imagesRendered_[imageIndex_],
       .swapchainCount = 1,
       .pSwapchains = &swapchain_,
       .pImageIndices = &imageIndex_,
@@ -136,6 +138,7 @@ void Swapchain::createTextures(const Context& context, VkFormat imageFormat,
 
   images_.reserve(imageCount);
   imagesAvailable_.resize(imageCount);
+  imagesRendered_.resize(imageCount);
   for (size_t index = 0; index < imageCount; ++index) {
     images_.emplace_back(
         std::make_shared<Texture>(context, device_, images[index], imageFormat,
@@ -160,9 +163,11 @@ void Swapchain::createSemaphores(const Context& context) {
         "Semaphore: swapchain image available semaphore " + std::to_string(i));
   }
 
-  VK_CHECK(vkCreateSemaphore(device_, &semaphoreInfo, nullptr, &imageRendered_));
-  context.setVkObjectname(imageRendered_, VK_OBJECT_TYPE_SEMAPHORE,
-                          "Semaphore: swapchain image presented semaphore");
+  for (size_t i = 0; i < imagesRendered_.size(); ++i) {
+    VK_CHECK(vkCreateSemaphore(device_, &semaphoreInfo, nullptr, &imagesRendered_[i]));
+    context.setVkObjectname(imagesRendered_[i], VK_OBJECT_TYPE_SEMAPHORE,
+                            "Semaphore: swapchain image presented semaphore " + std::to_string(i));
+  }
 }
 
 }  // namespace VulkanCore
