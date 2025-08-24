@@ -63,7 +63,7 @@ int main(int argc, char* argv[]) {
 
   std::vector<std::string> validationLayers;
 #ifdef _DEBUG
-  //validationLayers.push_back("VK_LAYER_KHRONOS_validation");
+  validationLayers.push_back("VK_LAYER_KHRONOS_validation");
 #endif
 
   VulkanCore::Context::enableDefaultFeatures();
@@ -244,6 +244,17 @@ int main(int argc, char* argv[]) {
   {
     const auto commandBuffer = commandMgr.getCmdBufferToBegin();
     {
+      // Initialize empty texture with default data to avoid validation errors
+      {
+        uint8_t emptyTextureData[4] = {255, 255, 0, 255}; // Yellow
+        auto emptyTextureStagingBuffer = context.createStagingBuffer(
+            sizeof(emptyTextureData), VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            "Empty texture staging buffer");
+        emptyTexture->uploadOnly(commandBuffer, emptyTextureStagingBuffer.get(),
+                                 emptyTextureData);
+        commandMgr.disposeWhenSubmitCompletes(std::move(emptyTextureStagingBuffer));
+      }
+      
       emptyTexture->transitionImageLayout(commandBuffer,
                                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
       ZoneScopedN("Model load");
@@ -352,11 +363,22 @@ int main(int argc, char* argv[]) {
     lightCamBuffer.buffer()->copyDataToBuffer(&lightCamTransform,
                                               sizeof(UniformTransforms));
 
+
+    {
+      auto commandBuffer = commandMgr.getCmdBufferToBegin();
+
+      dataUploader.processLoadedTextures(commandBuffer, commandMgr.queueFamilyIndex());
+
+      commandMgr.endCmdBuffer(commandBuffer);
+
+      VkPipelineStageFlags flags = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+      const auto submitInfo =
+          context.swapchain()->createSubmitInfo(&commandBuffer, &flags, false, false);
+      commandMgr.submit(&submitInfo);
+      commandMgr.waitUntilSubmitIsComplete();
+    }
+
     auto commandBuffer = commandMgr.getCmdBufferToBegin();
-
-    dataUploader.processLoadedTextures(commandBuffer, commandMgr.queueFamilyIndex());
-
-
     const auto texture = context.swapchain()->acquireImage();
     const auto index = context.swapchain()->currentImageIndex();
     TracyPlot("Swapchain image index", (int64_t)index);

@@ -172,6 +172,16 @@ int main(int argc, char* argv[]) {
   {
     const auto commandBuffer = commandMgr.getCmdBufferToBegin();
     {
+      {
+        uint8_t emptyTextureData[4] = {255, 255, 0, 255};
+        auto emptyTextureStagingBuffer = context.createStagingBuffer(
+            sizeof(emptyTextureData), VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            "Empty texture staging buffer");
+        emptyTexture->uploadOnly(commandBuffer, emptyTextureStagingBuffer.get(),
+                                 emptyTextureData);
+        commandMgr.disposeWhenSubmitCompletes(std::move(emptyTextureStagingBuffer));
+      }
+      
       emptyTexture->transitionImageLayout(commandBuffer,
                                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
       samplers.emplace_back(context.createSampler(
@@ -387,9 +397,20 @@ int main(int argc, char* argv[]) {
       time = now;
     }
 
-    auto commandBuffer = commandMgr.getCmdBufferToBegin();
+    {
+      auto commandBuffer = commandMgr.getCmdBufferToBegin();
 
-    dataUploader.processLoadedTextures(commandBuffer, commandMgr.queueFamilyIndex());
+      dataUploader.processLoadedTextures(commandBuffer, commandMgr.queueFamilyIndex());
+
+      commandMgr.endCmdBuffer(commandBuffer);
+
+      VkPipelineStageFlags flags = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+      const auto submitInfo =
+          context.swapchain()->createSubmitInfo(&commandBuffer, &flags, false, false);
+      commandMgr.submit(&submitInfo);
+      commandMgr.waitUntilSubmitIsComplete();
+    }
+    auto commandBuffer = commandMgr.getCmdBufferToBegin();
 
     const auto texture = context.swapchain()->acquireImage();
     const auto index = context.swapchain()->currentImageIndex();
